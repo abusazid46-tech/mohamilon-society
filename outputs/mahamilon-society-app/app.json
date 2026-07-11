@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Mahamilon Society",
+    "slug": "mahamilon-society",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/mahamilon-logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/mahamilon-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "org.mahamilonsociety.app"
+    },
+    "android": {
+      "package": "org.mahamilonsociety.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/mahamilon-logo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/mahamilon-logo.png",
+          "color": "#0b3a82"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "replace-after-eas-init"
+      }
+    }
+  }
+}
