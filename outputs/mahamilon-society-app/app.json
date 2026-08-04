@@ -2,26 +2,23 @@
   "expo": {
     "name": "Mahamilon Society",
     "slug": "mahamilon-society",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "orientation": "portrait",
-    "icon": "./assets/mahamilon-logo.png",
+    "icon": "./assets/mahamilon-app-icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/mahamilon-logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "org.mahamilonsociety.app"
+      "bundleIdentifier": "org.mahamilonsociety.app",
+      "buildNumber": "1"
     },
     "android": {
       "package": "org.mahamilonsociety.app",
+      "versionCode": 3,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/mahamilon-logo.png",
+        "foregroundImage": "./assets/mahamilon-app-icon.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
@@ -32,15 +29,27 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/mahamilon-logo.png",
+          "icon": "./assets/mahamilon-app-icon.png",
           "color": "#0b3a82"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/mahamilon-app-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff",
+          "imageWidth": 220
         }
       ]
     ],
     "extra": {
       "eas": {
-        "projectId": "replace-after-eas-init"
+        "projectId": "78d453f3-a8b4-45c0-8cff-a44772ac634f"
       }
-    }
+    },
+    "owner": "aruz6"
   }
 }

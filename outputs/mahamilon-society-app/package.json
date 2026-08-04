@@ -1,6 +1,6 @@
 {
   "name": "mahamilon-society-app",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "main": "expo/AppEntry.js",
   "scripts": {
@@ -13,12 +13,17 @@
   "dependencies": {
     "@expo/metro-runtime": "~56.0.14",
     "@expo/vector-icons": "^15.1.1",
-    "expo": "^56.0.9",
+    "expo": "~56.0.17",
+    "expo-document-picker": "~56.0.4",
+    "expo-font": "~56.0.7",
     "expo-linear-gradient": "^56.0.4",
-    "expo-notifications": "^56.0.16",
+    "expo-notifications": "~56.0.22",
+    "expo-secure-store": "~56.0.4",
+    "expo-splash-screen": "~56.0.14",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.85.3",
+    "react-native-safe-area-context": "~5.7.0",
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {

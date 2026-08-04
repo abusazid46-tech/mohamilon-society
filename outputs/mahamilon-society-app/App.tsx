@@ -1,6 +1,7 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Notifications from "expo-notifications";
+import * as DocumentPicker from "expo-document-picker";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
@@ -8,15 +9,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  ActivityIndicator,
+  RefreshControl,
+  Linking
 } from "react-native";
-import { ledger, loans, memberProfile, notifications, Scheme, schemes } from "./src/domain";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Scheme } from "./src/domain";
 import { colors, shadow } from "./src/theme";
+import { api, ApiError, Dashboard } from "./src/api";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -30,7 +35,6 @@ Notifications.setNotificationHandler({
 type Tab = "home" | "accounts" | "loan" | "kyc" | "profile";
 
 type LoginForm = {
-  memberId: string;
   phone: string;
   otp: string;
 };
@@ -45,17 +49,13 @@ type RegistrationForm = {
   address: string;
   nominee: string;
   occupation: string;
-  openingScheme: string;
-  openingDeposit: string;
   mpin: string;
 };
 
 type AccountForm = {
-  name: string;
-  phone: string;
-  nominee: string;
   plan: string;
   deposit: string;
+  shares: string;
 };
 
 type LoanForm = {
@@ -63,13 +63,11 @@ type LoanForm = {
   purpose: string;
   income: string;
   tenure: string;
+  loanType: "personal" | "business" | "emergency";
+  emiFrequency: "daily" | "weekly" | "monthly";
 };
 
-type KycForm = {
-  aadhaar: string;
-  pan: string;
-  address: string;
-};
+const emptyDashboard: Dashboard = {profile:{name:"",member_no:"",phone:"",email:null,address:"",nominee:"",occupation:null,kyc_status:"not_submitted",total_balance:"0",active_accounts:0,mcs_score:500,maximum_loan:0},accounts:[],payments:[],loans:[],installments:[],repayments:[],notifications:[],ledger:[]};
 
 const tabs: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { id: "home", label: "Home", icon: "home-outline" },
@@ -79,13 +77,17 @@ const tabs: { id: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] =
   { id: "profile", label: "Profile", icon: "person-outline" }
 ];
 
-export default function App() {
+export default function App() { return <SafeAreaProvider><AppContent /></SafeAreaProvider>; }
+
+function AppContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [activeTab, setActiveTab] = useState<Tab>("home");
+  const [dashboard, setDashboard] = useState<Dashboard>(emptyDashboard);
+  const [liveSchemes, setLiveSchemes] = useState<Scheme[]>([]);
+  const [loading, setLoading] = useState(false);
   const [loginForm, setLoginForm] = useState<LoginForm>({
-    memberId: "MS-2026-0148",
-    phone: "9876543210",
+    phone: "",
     otp: ""
   });
   const [registrationForm, setRegistrationForm] = useState<RegistrationForm>({
@@ -96,69 +98,78 @@ export default function App() {
     address: "",
     nominee: "",
     occupation: "",
-    openingScheme: "Daily RD Account",
-    openingDeposit: "",
     mpin: ""
   });
   const [accountForm, setAccountForm] = useState<AccountForm>({
-    name: "",
-    phone: "",
-    nominee: "",
     plan: "Daily RD Account",
-    deposit: ""
+    deposit: "",
+    shares: "1"
   });
   const [loanForm, setLoanForm] = useState<LoanForm>({
     amount: "",
     purpose: "",
     income: "",
-    tenure: ""
-  });
-  const [kycForm, setKycForm] = useState<KycForm>({
-    aadhaar: "",
-    pan: "",
-    address: ""
+    tenure: "",
+    loanType: "personal",
+    emiFrequency: "monthly"
   });
 
   useEffect(() => {
     Notifications.requestPermissionsAsync().catch(() => undefined);
+    api.hasSession().then(async (hasSession) => { if(hasSession){setIsLoggedIn(true); await refreshData();} }).catch(() => undefined);
   }, []);
 
-  const login = () => {
-    const hasMemberId = loginForm.memberId.trim().length >= 6;
-    const hasPhone = loginForm.phone.trim().length >= 10;
-    if (!hasMemberId || !hasPhone) {
-      Alert.alert("Check login details", "Enter member ID and registered mobile number.");
-      return;
-    }
-    setIsLoggedIn(true);
+  const refreshData = async () => {
+    setLoading(true);
+    try {
+      const [data,serverSchemes]=await Promise.all([api.dashboard(),api.schemes()]);
+      setDashboard(data);
+      setLiveSchemes(serverSchemes.map((s:any)=>({
+        id:String(s.id), title:s.name, type:s.type.toUpperCase()==="FD"?"FD":"RD",
+        frequency:s.deposit_frequency?s.deposit_frequency[0].toUpperCase()+s.deposit_frequency.slice(1):"Monthly",
+        amount:`Minimum ₹${Number(s.minimum_amount).toLocaleString("en-IN")}`,
+        term:s.term_months?`${s.term_months} months`:"Flexible", rate:`${s.annual_rate}% p.a.`,
+        status:"Available", maturity:s.description??"Calculated after approval"
+      } as Scheme)));
+    } catch(error) {
+      if(error instanceof ApiError&&error.status===401){await api.logout();setIsLoggedIn(false);}
+      else Alert.alert("Sync failed",error instanceof ApiError?error.message:"Unable to reach server");
+    } finally { setLoading(false); }
   };
 
-  const register = () => {
+  const login = async () => {
+    const hasPhone = loginForm.phone.trim().length >= 10;
+    if (!hasPhone) {
+      Alert.alert("Check login details", "Enter your registered mobile number.");
+      return;
+    }
+    if (!loginForm.otp.trim()) { Alert.alert("MPIN required", "Enter your six-digit MPIN."); return; }
+    try { await api.login(loginForm.phone.trim(), loginForm.otp.trim()); setIsLoggedIn(true); await refreshData(); }
+    catch (error) { Alert.alert("Login failed", error instanceof ApiError ? error.message : "Unable to reach the society server."); }
+  };
+
+  const register = async () => {
     const requiredFields = [
       registrationForm.fullName,
       registrationForm.phone,
       registrationForm.aadhaar,
       registrationForm.address,
       registrationForm.nominee,
-      registrationForm.openingDeposit,
       registrationForm.mpin
     ];
     const hasMissing = requiredFields.some((value) => value.trim().length === 0);
     if (hasMissing || registrationForm.phone.trim().length < 10) {
       Alert.alert(
         "Complete registration",
-        "Enter name, mobile, Aadhaar, address, nominee, opening deposit and MPIN."
+        "Enter name, mobile, Aadhaar, address, nominee and MPIN."
       );
       return;
     }
 
-    Alert.alert(
-      "Registration submitted",
-      "Your member registration and KYC details were submitted for manual approval."
-    );
+    try { const result=await api.register({name:registrationForm.fullName.trim(),phone:registrationForm.phone.trim(),aadhaar:registrationForm.aadhaar.trim(),pan:registrationForm.pan.trim().toUpperCase()||undefined,address:registrationForm.address.trim(),nominee_name:registrationForm.nominee.trim(),occupation:registrationForm.occupation.trim()||undefined,mpin:registrationForm.mpin.trim()}); Alert.alert("Registration submitted",`${result.message}\nMember number: ${result.member_no}`); }
+    catch(error){ Alert.alert("Registration failed",error instanceof ApiError?error.message:"Unable to reach the society server."); return; }
     setLoginForm((prev) => ({
       ...prev,
-      memberId: "Pending approval",
       phone: registrationForm.phone
     }));
     setRegistrationForm({
@@ -169,8 +180,6 @@ export default function App() {
       address: "",
       nominee: "",
       occupation: "",
-      openingScheme: "Daily RD Account",
-      openingDeposit: "",
       mpin: ""
     });
     setAuthMode("login");
@@ -187,20 +196,35 @@ export default function App() {
     Alert.alert("Notification sent", "A local test notification was queued on this device.");
   };
 
-  const submitAccount = () => {
-    Alert.alert("Request submitted", "Your account opening request was sent for society review.");
-    setAccountForm({ name: "", phone: "", nominee: "", plan: "Daily RD Account", deposit: "" });
+  const submitAccount = async () => {
+    const scheme=liveSchemes.find(item=>item.title===accountForm.plan)??liveSchemes[0]; if(!scheme||!Number(accountForm.deposit)){Alert.alert("Complete request","Choose a scheme and enter the opening deposit.");return;} try { await api.openAccount(Number(scheme.id),Number(accountForm.deposit),Math.max(1,Number(accountForm.shares)||1)); await refreshData(); Alert.alert("Request submitted", "After staff approval, your UPI QR will appear here for the opening payment."); } catch(error){Alert.alert("Request failed",error instanceof ApiError?error.message:"Server unavailable");return;}
+    setAccountForm({ plan: "Daily RD Account", deposit: "", shares:"1" });
   };
 
-  const submitLoan = () => {
-    Alert.alert("Loan application submitted", "Your application is now under review.");
-    setLoanForm({ amount: "", purpose: "", income: "", tenure: "" });
+  const submitLoan = async () => {
+    try { await api.applyLoan({loan_type:loanForm.loanType,emi_frequency:loanForm.emiFrequency,amount:Number(loanForm.amount),purpose:loanForm.purpose,monthly_income:Number(loanForm.income),tenure_months:Number(loanForm.tenure)}); await refreshData(); Alert.alert("Loan application submitted",loanForm.loanType==="emergency"?"Emergency request is due for decision within three days.":"Your application is now under review."); } catch(error){Alert.alert("Application failed",error instanceof ApiError?error.message:"Server unavailable");return;}
+    setLoanForm({ amount:"",purpose:"",income:"",tenure:"",loanType:"personal",emiFrequency:"monthly" });
   };
 
-  const submitKyc = () => {
-    Alert.alert("KYC submitted", "Documents are marked for manual verification.");
-    setKycForm({ aadhaar: "", pan: "", address: "" });
+  const submitPayment = async (payment:any,utr:string) => {
+    if(!utr.trim())return;
+    try{await api.submitPayment(payment.id,utr.trim());await refreshData();Alert.alert("Submitted","Payment is awaiting staff verification.");}
+    catch(error){Alert.alert("Failed",error instanceof ApiError?error.message:"Unable to submit payment");}
   };
+
+  const respondToOffer=async(id:number,decision:"accept"|"decline")=>{
+    try{await api.respondToLoanOffer(id,decision);await refreshData();Alert.alert("Offer updated",`Loan offer ${decision}ed.`);}
+    catch(error){Alert.alert("Unable to update offer",error instanceof ApiError?error.message:"Server unavailable");}
+  };
+
+  const submitLoanRepayment=async(id:number,amount:number,utr:string)=>{
+    try{await api.submitLoanRepayment(id,amount,utr);await refreshData();Alert.alert("Repayment submitted","Staff will verify the UTR before updating your EMI schedule.");}
+    catch(error){Alert.alert("Repayment failed",error instanceof ApiError?error.message:"Server unavailable");}
+  };
+
+  const readNotification=async(id:number)=>{try{await api.markNotificationRead(id);await refreshData();}catch{}};
+
+  const submitKyc = async (type:"aadhaar"|"pan"|"photo"|"address_proof") => { const result=await DocumentPicker.getDocumentAsync({type:["image/jpeg","image/png","application/pdf"],copyToCacheDirectory:true}); if(result.canceled)return; setLoading(true); try{await api.uploadKyc(type,result.assets[0]);await refreshData();Alert.alert("KYC uploaded","The document is awaiting staff review.");}catch(error){Alert.alert("Upload failed",error instanceof ApiError?error.message:"Unable to upload document");}finally{setLoading(false);} };
 
   if (!isLoggedIn) {
     return (
@@ -218,22 +242,25 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={["top","left","right"]}>
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.select({ ios: "padding", android: undefined })}
       >
         <View style={styles.appShell}>
-          <ScrollView
+            <ScrollView
             style={styles.content}
             contentContainerStyle={styles.contentInner}
-            showsVerticalScrollIndicator={false}
-          >
-            <MemberHeader onLogout={() => setIsLoggedIn(false)} />
+              showsVerticalScrollIndicator={false}
+              refreshControl={<RefreshControl refreshing={loading} onRefresh={refreshData} />}
+            >
+            <MemberHeader profile={dashboard.profile} onLogout={() => api.logout().finally(() => setIsLoggedIn(false))} />
             {activeTab === "home" && (
               <HomeScreen
                 setActiveTab={setActiveTab}
                 sendLocalNotification={sendLocalNotification}
+                dashboard={dashboard}
+                readNotification={readNotification}
               />
             )}
             {activeTab === "accounts" && (
@@ -241,15 +268,20 @@ export default function App() {
                 form={accountForm}
                 setForm={setAccountForm}
                 submitAccount={submitAccount}
+                schemes={liveSchemes}
+                accounts={dashboard.accounts}
+                payments={dashboard.payments}
+                submitPayment={submitPayment}
               />
             )}
             {activeTab === "loan" && (
-              <LoanScreen form={loanForm} setForm={setLoanForm} submitLoan={submitLoan} />
+              <LoanScreen form={loanForm} setForm={setLoanForm} submitLoan={submitLoan} loans={dashboard.loans} installments={dashboard.installments??[]} repayments={dashboard.repayments??[]} profile={dashboard.profile} respondToOffer={respondToOffer} submitRepayment={submitLoanRepayment} />
             )}
             {activeTab === "kyc" && (
-              <KycScreen form={kycForm} setForm={setKycForm} submitKyc={submitKyc} />
+              <KycScreen kycStatus={dashboard.profile.kyc_status} submitKyc={submitKyc} />
             )}
-            {activeTab === "profile" && <ProfileScreen />}
+            {activeTab === "profile" && <ProfileScreen profile={dashboard.profile} />}
+            {loading && dashboard.profile.name==="" && <ActivityIndicator size="large" color={colors.navy} />}
           </ScrollView>
           <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
         </View>
@@ -278,7 +310,7 @@ function AuthScreen({
   onRegister: () => void;
 }) {
   return (
-    <SafeAreaView style={styles.loginSafe}>
+    <SafeAreaView style={styles.loginSafe} edges={["top","bottom","left","right"]}>
       <KeyboardAvoidingView
         style={styles.keyboard}
         behavior={Platform.select({ ios: "padding", android: undefined })}
@@ -356,12 +388,6 @@ function LoginPanel({
   return (
           <View style={styles.loginPanel}>
             <Text style={styles.panelTitleLarge}>Member Login</Text>
-            <FormInput
-              label="Member ID"
-              value={form.memberId}
-              onChangeText={(memberId) => setForm((prev) => ({ ...prev, memberId }))}
-              autoCapitalize="characters"
-            />
             <FormInput
               label="Registered mobile number"
               value={form.phone}
@@ -442,17 +468,6 @@ function RegistrationPanel({
         onChangeText={(occupation) => setForm((prev) => ({ ...prev, occupation }))}
       />
       <FormInput
-        label="Opening scheme"
-        value={form.openingScheme}
-        onChangeText={(openingScheme) => setForm((prev) => ({ ...prev, openingScheme }))}
-      />
-      <FormInput
-        label="Opening deposit"
-        value={form.openingDeposit}
-        keyboardType="numeric"
-        onChangeText={(openingDeposit) => setForm((prev) => ({ ...prev, openingDeposit }))}
-      />
-      <FormInput
         label="Create MPIN"
         value={form.mpin}
         keyboardType="numeric"
@@ -468,7 +483,7 @@ function RegistrationPanel({
   );
 }
 
-function MemberHeader({ onLogout }: { onLogout: () => void }) {
+function MemberHeader({ profile, onLogout }: { profile: Dashboard["profile"]; onLogout: () => void }) {
   return (
     <LinearGradient colors={[colors.navyDark, colors.navy]} style={styles.header}>
       <View style={styles.headerTop}>
@@ -483,10 +498,10 @@ function MemberHeader({ onLogout }: { onLogout: () => void }) {
       </View>
       <View style={styles.memberCard}>
         <View>
-          <Text style={styles.memberName}>{memberProfile.name}</Text>
-          <Text style={styles.memberMeta}>{memberProfile.memberId}</Text>
+          <Text style={styles.memberName}>{profile.name}</Text>
+          <Text style={styles.memberMeta}>{profile.member_no}</Text>
         </View>
-        <StatusPill label={memberProfile.kycStatus} />
+        <StatusPill label={profile.kyc_status} />
       </View>
     </LinearGradient>
   );
@@ -494,24 +509,28 @@ function MemberHeader({ onLogout }: { onLogout: () => void }) {
 
 function HomeScreen({
   setActiveTab,
-  sendLocalNotification
+  sendLocalNotification,
+  dashboard
+  ,readNotification
 }: {
   setActiveTab: (tab: Tab) => void;
   sendLocalNotification: () => void;
+  dashboard: Dashboard;
+  readNotification: (id:number)=>void;
 }) {
   return (
     <>
       <View style={styles.balancePanel}>
         <Text style={styles.balanceLabel}>Savings balance</Text>
-        <Text style={styles.balanceValue}>{memberProfile.savingsBalance}</Text>
-        <Text style={styles.balanceHint}>Next collection: {memberProfile.nextCollection}</Text>
+        <Text style={styles.balanceValue}>₹{Number(dashboard.profile.total_balance).toLocaleString("en-IN",{minimumFractionDigits:2})}</Text>
+        <Text style={styles.balanceHint}>Updated from the live society ledger</Text>
       </View>
 
       <View style={styles.metricGrid}>
-        <MetricCard icon="trending-up-outline" label="Total deposit" value={memberProfile.totalDeposit} />
-        <MetricCard icon="albums-outline" label="Accounts" value={memberProfile.activeAccounts} />
-        <MetricCard icon="shield-checkmark-outline" label="KYC" value="In Review" />
-        <MetricCard icon="cash-outline" label="Loan" value="Under Review" />
+        <MetricCard icon="trending-up-outline" label="Total balance" value={`₹${Number(dashboard.profile.total_balance).toLocaleString("en-IN")}`} />
+        <MetricCard icon="albums-outline" label="Accounts" value={String(dashboard.profile.active_accounts)} />
+        <MetricCard icon="shield-checkmark-outline" label="KYC" value={dashboard.profile.kyc_status.replaceAll("_"," ")} />
+        <MetricCard icon="speedometer-outline" label="MCS score" value={String(dashboard.profile.mcs_score)} />
       </View>
 
       <View style={styles.quickActions}>
@@ -521,12 +540,12 @@ function HomeScreen({
       </View>
 
       <Panel title="Recent Ledger" icon="receipt-outline">
-        {ledger.map((item) => (
-          <InfoRow key={item.id} label={`${item.title} | ${item.date}`} value={`${item.amount} | ${item.status}`} />
+        {dashboard.ledger.length===0?<Text style={styles.helperText}>No ledger entries yet.</Text>:dashboard.ledger.map((item:any) => (
+          <InfoRow key={item.id} label={`${item.description} | ${new Date(item.created_at).toLocaleDateString()}`} value={`₹${item.amount} | ${item.status}`} />
         ))}
       </Panel>
 
-      <NotificationList sendLocalNotification={sendLocalNotification} />
+      <NotificationList sendLocalNotification={sendLocalNotification} notifications={dashboard.notifications??[]} readNotification={readNotification} />
     </>
   );
 }
@@ -534,14 +553,48 @@ function HomeScreen({
 function AccountsScreen({
   form,
   setForm,
-  submitAccount
+  submitAccount,
+  schemes,
+  accounts,
+  payments,
+  submitPayment
 }: {
   form: AccountForm;
   setForm: React.Dispatch<React.SetStateAction<AccountForm>>;
   submitAccount: () => void;
+  schemes: Scheme[];
+  accounts: any[];
+  payments: any[];
+  submitPayment: (payment:any,utr:string) => void;
 }) {
+  const [utrs,setUtrs]=useState<Record<number,string>>({});
   return (
     <>
+      <Panel title="My Accounts" icon="wallet-outline">
+        {accounts.length===0?<Text style={styles.helperText}>No account requests yet.</Text>:accounts.map((account:any)=>(
+          <View key={account.id} style={styles.loanItem}>
+            <View style={styles.loanTop}><Text style={styles.cardTitle}>{account.scheme_name}</Text><StatusPill label={account.onboarding_status?.replaceAll("_"," ")??account.status}/></View>
+            <Text style={styles.cardMeta}>{account.account_no} · {account.share_count} share(s) · {account.effective_interest_rate}% p.a.</Text>
+            <InfoRow label="Balance" value={`₹${Number(account.balance).toLocaleString("en-IN")}`}/>
+            <InfoRow label="Monthly commitment" value={`₹${Number(account.monthly_commitment).toLocaleString("en-IN")}`}/>
+          </View>
+        ))}
+      </Panel>
+
+      {payments.filter((payment:any)=>["requested","rejected"].includes(payment.status)).map((payment:any)=>(
+        <Panel key={payment.id} title="Opening Payment Required" icon="qr-code-outline">
+          <Text style={styles.helperText}>Pay exactly ₹{Number(payment.amount).toLocaleString("en-IN")} for account {payment.account_no}. The account activates only after staff verifies your UTR.</Text>
+          <Image source={{uri:`https://quickchart.io/qr?size=260&text=${encodeURIComponent(payment.upi_uri)}`}} style={styles.paymentQr} resizeMode="contain"/>
+          <ActionButton label="Open UPI App" icon="phone-portrait-outline" onPress={()=>Linking.openURL(payment.upi_uri)}/>
+          <FormInput label="UPI transaction reference (UTR)" value={utrs[payment.id]??""} onChangeText={(value)=>setUtrs(prev=>({...prev,[payment.id]:value}))} autoCapitalize="characters"/>
+          <ActionButton label="Submit Payment for Verification" icon="checkmark-circle-outline" onPress={()=>submitPayment(payment,utrs[payment.id]??"")}/>
+          {payment.status==="rejected"&&<Text style={[styles.helperText,{color:colors.red}]}>Previous submission was rejected. Check the UTR and submit again.</Text>}
+        </Panel>
+      ))}
+      {payments.filter((payment:any)=>payment.status==="submitted").map((payment:any)=>(
+        <Panel key={payment.id} title="Payment Under Review" icon="time-outline"><InfoRow label="Reference" value={payment.reference}/><InfoRow label="UTR" value={payment.utr}/><InfoRow label="Status" value="Awaiting staff verification" emphasis/></Panel>
+      ))}
+
       <Panel title="RD Accounts" icon="repeat-outline">
         {schemes
           .filter((scheme) => scheme.type === "RD")
@@ -559,33 +612,15 @@ function AccountsScreen({
       </Panel>
 
       <Panel title="Account Opening Request" icon="person-add-outline">
-        <FormInput
-          label="Applicant full name"
-          value={form.name}
-          onChangeText={(name) => setForm((prev) => ({ ...prev, name }))}
-        />
-        <FormInput
-          label="Mobile number"
-          value={form.phone}
-          keyboardType="phone-pad"
-          onChangeText={(phone) => setForm((prev) => ({ ...prev, phone }))}
-        />
-        <FormInput
-          label="Nominee name"
-          value={form.nominee}
-          onChangeText={(nominee) => setForm((prev) => ({ ...prev, nominee }))}
-        />
-        <FormInput
-          label="Scheme"
-          value={form.plan}
-          onChangeText={(plan) => setForm((prev) => ({ ...prev, plan }))}
-        />
+        <Text style={styles.fieldLabel}>Choose scheme</Text>
+        {schemes.map((scheme)=><Pressable key={scheme.id} style={[styles.quickAction,form.plan===scheme.title&&{borderColor:colors.navy,backgroundColor:"#edf4ff"}]} onPress={()=>setForm(prev=>({...prev,plan:scheme.title}))}><Ionicons name={form.plan===scheme.title?"radio-button-on":"radio-button-off"} size={20} color={colors.navy}/><Text style={styles.quickActionText}>{scheme.title} · {scheme.amount}</Text></Pressable>)}
         <FormInput
           label="Opening deposit"
           value={form.deposit}
           keyboardType="numeric"
           onChangeText={(deposit) => setForm((prev) => ({ ...prev, deposit }))}
         />
+        <FormInput label="Number of ₹500 monthly shares" value={form.shares} keyboardType="numeric" onChangeText={(shares)=>setForm(prev=>({...prev,shares}))}/>
         <ActionButton label="Submit Request" icon="cloud-upload-outline" onPress={submitAccount} />
       </Panel>
     </>
@@ -595,15 +630,37 @@ function AccountsScreen({
 function LoanScreen({
   form,
   setForm,
-  submitLoan
+  submitLoan,
+  loans,
+  installments,
+  repayments,
+  profile,
+  respondToOffer,
+  submitRepayment
 }: {
   form: LoanForm;
   setForm: React.Dispatch<React.SetStateAction<LoanForm>>;
   submitLoan: () => void;
+  loans: any[];
+  installments: any[];
+  repayments: any[];
+  profile: Dashboard["profile"];
+  respondToOffer: (id:number,decision:"accept"|"decline")=>void;
+  submitRepayment: (id:number,amount:number,utr:string)=>void;
 }) {
+  const [repaymentForms,setRepaymentForms]=useState<Record<number,{amount:string;utr:string}>>({});
   return (
     <>
+      <Panel title="Mahamilon Credit Score" icon="speedometer-outline">
+        <InfoRow label="Current MCS" value={`${profile.mcs_score} / 900`} emphasis/>
+        <InfoRow label="Maximum loan (85% of savings)" value={`₹${Number(profile.maximum_loan).toLocaleString("en-IN")}`}/>
+        <Text style={styles.helperText}>MCS reflects verified deposits, account history, completed loans, and rejected payment or loan events.</Text>
+      </Panel>
       <Panel title="Loan Application" icon="document-text-outline">
+        <Text style={styles.fieldLabel}>Loan type</Text>
+        <View style={styles.choiceRow}>{(["personal","business","emergency"] as const).map(value=><Pressable key={value} style={[styles.choice,form.loanType===value&&styles.choiceActive]} onPress={()=>setForm(prev=>({...prev,loanType:value}))}><Text style={[styles.choiceText,form.loanType===value&&styles.choiceTextActive]}>{value==="emergency"?"Emergency health":value}</Text></Pressable>)}</View>
+        <Text style={styles.fieldLabel}>EMI frequency</Text>
+        <View style={styles.choiceRow}>{(["daily","weekly","monthly"] as const).map(value=><Pressable key={value} style={[styles.choice,form.emiFrequency===value&&styles.choiceActive]} onPress={()=>setForm(prev=>({...prev,emiFrequency:value}))}><Text style={[styles.choiceText,form.emiFrequency===value&&styles.choiceTextActive]}>{value}</Text></Pressable>)}</View>
         <FormInput
           label="Loan amount"
           value={form.amount}
@@ -636,80 +693,74 @@ function LoanScreen({
               <Text style={styles.cardTitle}>{loan.purpose}</Text>
               <StatusPill label={loan.status} />
             </View>
-            <Text style={styles.cardMeta}>{loan.amount}</Text>
-            <InfoRow label={loan.officer} value={loan.nextStep} />
+            <Text style={styles.cardMeta}>{loan.loan_type} · {loan.emi_frequency} EMI · ₹{Number(loan.amount).toLocaleString("en-IN")}</Text>
+            <InfoRow label="MCS at application" value={String(loan.mcs_snapshot??profile.mcs_score)} />
+            {loan.annual_interest_rate&&<InfoRow label="Loan interest" value={`${loan.annual_interest_rate}% p.a.`}/>}
+            {loan.outstanding_principal!==null&&loan.outstanding_principal!==undefined&&<InfoRow label="Outstanding principal" value={`₹${Number(loan.outstanding_principal).toLocaleString("en-IN")}`}/>}
+            {Boolean(loan.is_offer)&&loan.status==="submitted"&&<View style={styles.choiceRow}><Pressable style={[styles.choice,styles.choiceActive]} onPress={()=>respondToOffer(loan.id,"accept")}><Text style={styles.choiceTextActive}>Accept offer</Text></Pressable><Pressable style={styles.choice} onPress={()=>respondToOffer(loan.id,"decline")}><Text style={styles.choiceText}>Decline</Text></Pressable></View>}
+            {loan.loan_type==="emergency"&&["submitted","under_review"].includes(loan.status)&&<Text style={[styles.helperText,{color:colors.red}]}>Emergency decision due within 3 days of submission.</Text>}
+            {["approved","disbursed"].includes(loan.status)&&<>
+              {installments.filter(item=>item.loan_id===loan.id&&item.status!=="paid").slice(0,3).map(item=><InfoRow key={item.id} label={`EMI #${item.installment_no} · ${item.due_on} · ${item.status}`} value={`₹${(Number(item.principal_due)+Number(item.interest_due)+Number(item.penalty_due)-Number(item.paid_amount)).toFixed(2)}`}/>)}
+              <FormInput label="Repayment amount" value={repaymentForms[loan.id]?.amount??""} keyboardType="numeric" onChangeText={(amount)=>setRepaymentForms(prev=>({...prev,[loan.id]:{amount,utr:prev[loan.id]?.utr??""}}))}/>
+              <FormInput label="Payment UTR" value={repaymentForms[loan.id]?.utr??""} autoCapitalize="characters" onChangeText={(utr)=>setRepaymentForms(prev=>({...prev,[loan.id]:{amount:prev[loan.id]?.amount??"",utr}}))}/>
+              <ActionButton label="Submit Repayment" icon="card-outline" onPress={()=>submitRepayment(loan.id,Number(repaymentForms[loan.id]?.amount),repaymentForms[loan.id]?.utr??"")}/>
+            </>}
           </View>
         ))}
+      </Panel>
+      <Panel title="Repayment History" icon="checkmark-done-outline">
+        {repayments.length===0?<Text style={styles.helperText}>No repayments submitted.</Text>:repayments.map(item=><InfoRow key={item.id} label={`${item.application_no} · ${item.utr}`} value={`₹${Number(item.amount).toLocaleString("en-IN")} · ${item.status}`}/>)}
       </Panel>
     </>
   );
 }
 
-function KycScreen({
-  form,
-  setForm,
-  submitKyc
-}: {
-  form: KycForm;
-  setForm: React.Dispatch<React.SetStateAction<KycForm>>;
-  submitKyc: () => void;
-}) {
+function KycScreen({kycStatus,submitKyc}:{kycStatus:string;submitKyc:(type:"aadhaar"|"pan"|"photo"|"address_proof")=>void}) {
   return (
     <>
       <Panel title="KYC Status" icon="shield-checkmark-outline">
-        <InfoRow label="Current status" value={memberProfile.kycStatus} emphasis />
+        <InfoRow label="Current status" value={kycStatus.replaceAll("_"," ")} emphasis />
         <InfoRow label="Verification method" value="Manual society office review" />
         <InfoRow label="Required documents" value="Aadhaar, PAN, photo, address proof" />
       </Panel>
 
-      <Panel title="Update KYC Details" icon="id-card-outline">
-        <FormInput
-          label="Aadhaar / ID number"
-          value={form.aadhaar}
-          keyboardType="numeric"
-          onChangeText={(aadhaar) => setForm((prev) => ({ ...prev, aadhaar }))}
-        />
-        <FormInput
-          label="PAN / tax ID"
-          value={form.pan}
-          autoCapitalize="characters"
-          onChangeText={(pan) => setForm((prev) => ({ ...prev, pan }))}
-        />
-        <FormInput
-          label="Current address"
-          value={form.address}
-          onChangeText={(address) => setForm((prev) => ({ ...prev, address }))}
-        />
-        <ActionButton label="Submit KYC" icon="cloud-upload-outline" onPress={submitKyc} />
+      <Panel title="Upload KYC Documents" icon="id-card-outline">
+        <Text style={styles.helperText}>PDF, JPG or PNG up to 5 MB. Documents are encrypted at rest and reviewed by authorized staff.</Text>
+        <ActionButton label="Upload Aadhaar" icon="cloud-upload-outline" onPress={()=>submitKyc("aadhaar")} />
+        <ActionButton label="Upload PAN" icon="cloud-upload-outline" onPress={()=>submitKyc("pan")} />
+        <ActionButton label="Upload Photo" icon="camera-outline" onPress={()=>submitKyc("photo")} />
+        <ActionButton label="Upload Address Proof" icon="document-outline" onPress={()=>submitKyc("address_proof")} />
       </Panel>
     </>
   );
 }
 
-function ProfileScreen() {
+function ProfileScreen({profile}:{profile:Dashboard["profile"]}) {
   return (
     <>
       <Panel title="Member Profile" icon="person-circle-outline">
         <View style={styles.profileHeader}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{memberProfile.initials}</Text>
+            <Text style={styles.avatarText}>{profile.name.split(" ").map(v=>v[0]).slice(0,2).join("")}</Text>
           </View>
           <View style={styles.profileCopy}>
-            <Text style={styles.profileName}>{memberProfile.name}</Text>
-            <Text style={styles.cardMeta}>{memberProfile.memberId}</Text>
+            <Text style={styles.profileName}>{profile.name}</Text>
+            <Text style={styles.cardMeta}>{profile.member_no}</Text>
           </View>
         </View>
-        <InfoRow label="Phone" value={memberProfile.phone} />
-        <InfoRow label="Email" value={memberProfile.email} />
-        <InfoRow label="Address" value={memberProfile.address} />
-        <InfoRow label="Nominee" value={memberProfile.nominee} />
-        <InfoRow label="Occupation" value={memberProfile.occupation} />
+        <InfoRow label="Phone" value={profile.phone} />
+        <InfoRow label="Email" value={profile.email??"Not provided"} />
+        <InfoRow label="Address" value={profile.address} />
+        <InfoRow label="Nominee" value={profile.nominee} />
+        <InfoRow label="Occupation" value={profile.occupation??"Not provided"} />
+        <InfoRow label="Mahamilon Credit Score" value={`${profile.mcs_score} / 900`} emphasis />
+        <InfoRow label="Current maximum loan" value={`₹${Number(profile.maximum_loan).toLocaleString("en-IN")}`} />
       </Panel>
 
       <Panel title="Security" icon="lock-closed-outline">
         <InfoRow label="Login method" value="Member ID + registered mobile + OTP/MPIN" />
         <InfoRow label="Device alerts" value="Enabled" />
-        <InfoRow label="Data sync" value="Online ledger required for live launch" emphasis />
+        <InfoRow label="Data sync" value="Connected to encrypted live ledger" emphasis />
       </Panel>
     </>
   );
@@ -722,8 +773,9 @@ function BottomNav({
   activeTab: Tab;
   setActiveTab: (tab: Tab) => void;
 }) {
+  const insets=useSafeAreaInsets();
   return (
-    <View style={styles.bottomNav}>
+    <View style={[styles.bottomNav,{paddingBottom:Math.max(insets.bottom,10),minHeight:72+Math.max(insets.bottom,10)}]}>
       {tabs.map((tab) => {
         const active = activeTab === tab.id;
         return (
@@ -821,24 +873,16 @@ function SchemeCard({ scheme }: { scheme: Scheme }) {
   );
 }
 
-function NotificationList({ sendLocalNotification }: { sendLocalNotification: () => void }) {
+function NotificationList({sendLocalNotification,notifications,readNotification}:{sendLocalNotification:()=>void;notifications:any[];readNotification:(id:number)=>void}) {
   return (
     <Panel title="Notifications" icon="notifications-outline">
-      {notifications.map((item) => (
-        <View key={item.id} style={styles.notificationItem}>
-          <Ionicons
-            name={item.unread ? "notifications" : "notifications-outline"}
-            size={22}
-            color={item.unread ? colors.red : colors.navy}
-          />
-          <View style={styles.notificationText}>
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.cardMeta}>{item.body}</Text>
-          </View>
-          <Text style={styles.notificationTime}>{item.time}</Text>
-        </View>
+      {notifications.length===0?<Text style={styles.helperText}>No society notifications yet.</Text>:notifications.map(item=>(
+        <Pressable key={item.id} style={styles.notificationItem} onPress={()=>readNotification(item.id)}>
+          <Ionicons name={item.read_at?"mail-open-outline":"mail-unread-outline"} size={20} color={item.read_at?colors.muted:colors.red}/>
+          <View style={styles.notificationText}><Text style={styles.cardTitle}>{item.title}</Text><Text style={styles.cardMeta}>{item.message}</Text><Text style={styles.notificationTime}>{new Date(item.created_at).toLocaleString()}</Text></View>
+        </Pressable>
       ))}
-      <ActionButton label="Test Alert" icon="send-outline" onPress={sendLocalNotification} />
+      <ActionButton label="Verify Device Alerts" icon="notifications-outline" onPress={sendLocalNotification} />
     </Panel>
   );
 }
@@ -945,7 +989,7 @@ const styles = StyleSheet.create({
     flex: 1
   },
   contentInner: {
-    paddingBottom: 104
+    paddingBottom: 128
   },
   loginContent: {
     flexGrow: 1,
@@ -1282,6 +1326,42 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.line
   },
+  paymentQr: {
+    width: 260,
+    height: 260,
+    alignSelf: "center",
+    marginVertical: 14,
+    backgroundColor: colors.white
+  },
+  choiceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12
+  },
+  choice: {
+    minHeight: 42,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.white
+  },
+  choiceActive: {
+    backgroundColor: colors.navy,
+    borderColor: colors.navy
+  },
+  choiceText: {
+    color: colors.navy,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "capitalize"
+  },
+  choiceTextActive: {
+    color: colors.white
+  },
   loanTop: {
     flexDirection: "row",
     gap: 8,
@@ -1424,7 +1504,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     minHeight: 82,
     paddingTop: 9,
-    paddingBottom: Platform.OS === "ios" ? 20 : 10,
     paddingHorizontal: 8,
     backgroundColor: colors.white,
     borderTopWidth: 1,
