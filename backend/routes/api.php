@@ -8,6 +8,7 @@ Route::prefix('v1')->group(function () {
  Route::middleware('api.token')->group(function(){
   Route::post('auth/logout',[MemberController::class,'logout']); Route::get('me',[MemberController::class,'me']);
   Route::get('dashboard',[MemberController::class,'dashboard']); Route::get('schemes',[MemberController::class,'schemes']);
+  Route::get('receipts',[MemberController::class,'receipts']);
   Route::post('accounts',[MemberController::class,'openAccount'])->middleware('throttle:10,1');
   Route::post('payments/{id}/submit',[MemberController::class,'submitPayment'])->middleware('throttle:10,1');
   Route::post('loans',[MemberController::class,'applyLoan'])->middleware('throttle:5,1');

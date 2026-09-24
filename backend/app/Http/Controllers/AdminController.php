@@ -3,10 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Services\{CreditScore, FinanceLedger, FinancialAutomation, LoanSchedule, MemberNotifier, StaffPermissions};
+use App\Services\{CreditScore, DepositCalculator, FinanceLedger, FinancialAutomation, LoanSchedule, MemberNotifier, ReceiptService, SequenceService, StaffPermissions, TransactionManager};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\{Auth, DB, Hash, Storage, Validator};
+use Illuminate\Support\Facades\{Auth, DB, Hash, Schema, Storage, Validator};
 use Illuminate\Support\Str;
 
 class AdminController extends Controller
@@ -55,7 +55,7 @@ class AdminController extends Controller
             'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table('accounts')->where('id', $account->id)->update([
-            'onboarding_status' => 'payment_required', 'approved_by' => $request->user()->id,
+            'onboarding_status' => 'payment_required', 'approved_by' => ($request->user()?->id ?: 1),
             'approved_at' => now(), 'updated_at' => now(),
         ]);
         MemberNotifier::send(
@@ -101,6 +101,7 @@ class AdminController extends Controller
     {
         $this->staff($request);
         FinancialAutomation::activateClosureWithdrawals();
+        FinancialAutomation::markOverdueInstallments();
         $permissions = StaffPermissions::for($request->user());
         $members = DB::table('members')->join('users','users.id','=','members.user_id')
             ->select('members.*','users.name','users.phone','users.email','users.status as user_status')
@@ -113,6 +114,36 @@ class AdminController extends Controller
             'monthly' => FinanceLedger::profitLossSummary($today->copy()->startOfMonth()->toDateString(), $today->copy()->endOfMonth()->toDateString()),
             'yearly' => FinanceLedger::profitLossSummary($today->copy()->startOfYear()->toDateString(), $today->copy()->endOfYear()->toDateString()),
         ];
+
+        // Date Filter for Dashboard KPIs (Section 1)
+        $dateFilter = $request->query('date_filter', 'today');
+        $customFrom = $request->query('custom_from');
+        $customTo = $request->query('custom_to');
+        [$filterStart, $filterEnd] = match ($dateFilter) {
+            'yesterday' => [Carbon::yesterday()->startOfDay(), Carbon::yesterday()->endOfDay()],
+            'this_week' => [Carbon::today()->startOfWeek(), Carbon::today()->endOfWeek()],
+            'this_month' => [Carbon::today()->startOfMonth(), Carbon::today()->endOfMonth()],
+            'this_year' => [Carbon::today()->startOfYear(), Carbon::today()->endOfYear()],
+            'custom' => [
+                $customFrom ? Carbon::parse($customFrom)->startOfDay() : Carbon::today()->startOfDay(),
+                $customTo ? Carbon::parse($customTo)->endOfDay() : Carbon::today()->endOfDay()
+            ],
+            default => [Carbon::today()->startOfDay(), Carbon::today()->endOfDay()],
+        };
+
+        $filteredCollection = (float) DB::table('ledger_entries')
+            ->where('direction', 'credit')
+            ->where('status', 'posted')
+            ->whereBetween('posted_at', [$filterStart, $filterEnd])
+            ->sum('amount');
+
+        $filteredExpenses = (float) DB::table('profit_loss_entries')
+            ->where('entry_type', 'expense')
+            ->whereBetween('occurred_on', [$filterStart->toDateString(), $filterEnd->toDateString()])
+            ->sum('amount');
+
+        $filteredPnl = FinanceLedger::profitLossSummary($filterStart->toDateString(), $filterEnd->toDateString());
+
         $transactionFilters = $request->validate([
             'tx_search' => 'nullable|string|max:100',
             'tx_account_id' => 'nullable|integer|exists:accounts,id',
@@ -156,6 +187,31 @@ class AdminController extends Controller
         $filteredTransactions = $transactionQuery
             ->select('ledger_entries.*','accounts.account_no','members.member_no','users.name')
             ->paginate(50, ['*'], 'transactions_page')->withQueryString();
+
+        $stmtMemberId = $request->query('stmt_member_id') ?: $request->query('member_id');
+        $stmtFrom = $request->query('stmt_from', now()->startOfMonth()->toDateString());
+        $stmtTo = $request->query('stmt_to', today()->toDateString());
+        $stmtAccountId = $request->query('stmt_account_id', 'all');
+        $statementData = null;
+        if ($stmtMemberId) {
+            try {
+                $statementData = $this->calculateStatement((int) $stmtMemberId, $stmtFrom, $stmtTo, $stmtAccountId);
+            } catch (\Throwable $e) {
+                $statementData = null;
+            }
+        }
+
+        $activeReportType = $request->query('report_type', 'transactions');
+        $reportFilterActive = $request->has('report_type');
+        $activeReport = null;
+        if ($reportFilterActive || in_array($activeReportType, ['transactions','receipts','loans','accounts','cash','profit-loss','members'], true)) {
+            try {
+                $activeReport = $this->queryReportData($request, $activeReportType);
+            } catch (\Throwable $e) {
+                $activeReport = null;
+            }
+        }
+
         return view('admin.dashboard', [
             'permissions' => $permissions, 'permissionDefinitions' => StaffPermissions::DEFINITIONS,
             'metrics' => [
@@ -191,23 +247,41 @@ class AdminController extends Controller
                 ->select('payments.*','accounts.account_no','users.name')->latest('payments.id')->limit(100)->get(),
             'transactions' => $filteredTransactions,
             'loans' => DB::table('loan_applications')->join('members','members.id','=','loan_applications.member_id')
-                ->join('users','users.id','=','members.user_id')->select('loan_applications.*','users.name','members.member_no','members.mcs_score')
+                ->join('users','users.id','=','members.user_id')
+                ->leftJoin('users as verifier', 'verifier.id', '=', 'loan_applications.verified_by')
+                ->select(
+                    'loan_applications.*',
+                    'users.name', 'users.phone', 'users.email', 'members.member_no', 'members.mcs_score', 'members.kyc_status',
+                    'verifier.name as verifier_name',
+                    DB::raw("(SELECT COALESCE(SUM(balance),0) FROM accounts WHERE accounts.member_id=members.id AND accounts.status='active') as member_savings"),
+                    DB::raw("(SELECT COALESCE(SUM(outstanding_principal),0) FROM loan_applications la WHERE la.member_id=members.id AND la.status IN ('approved','disbursed') AND la.id != loan_applications.id) as existing_outstanding"),
+                    DB::raw("(SELECT COUNT(*) FROM loan_applications la WHERE la.member_id=members.id AND la.id != loan_applications.id) as previous_loans_count")
+                )
                 ->latest('loan_applications.id')->limit(100)->get(),
             'repayments' => DB::table('loan_repayments')->join('loan_applications','loan_applications.id','=','loan_repayments.loan_id')
                 ->join('members','members.id','=','loan_applications.member_id')->join('users','users.id','=','members.user_id')
                 ->select('loan_repayments.*','loan_applications.application_no','users.name')
                 ->latest('loan_repayments.id')->limit(100)->get(),
-            'installments' => DB::table('loan_installments')->join('loan_applications','loan_applications.id','=','loan_installments.loan_id')
+            'installments' => $installments = DB::table('loan_installments')->join('loan_applications','loan_applications.id','=','loan_installments.loan_id')
                 ->join('members','members.id','=','loan_applications.member_id')->join('users','users.id','=','members.user_id')
-                ->select('loan_installments.*','loan_applications.application_no','users.name')
+                ->select(
+                    'loan_installments.*',
+                    'loan_applications.application_no',
+                    'loan_applications.outstanding_principal',
+                    'users.name', 'users.phone', 'members.member_no',
+                    DB::raw('(loan_installments.principal_due + loan_installments.interest_due + loan_installments.penalty_due) as total_payable'),
+                    DB::raw('(loan_installments.principal_due + loan_installments.interest_due + loan_installments.penalty_due - loan_installments.paid_amount) as total_outstanding'),
+                    DB::raw('CASE WHEN loan_installments.due_on < CURRENT_DATE THEN DATEDIFF(CURRENT_DATE, loan_installments.due_on) ELSE 0 END as days_overdue')
+                )
                 ->whereIn('loan_installments.status',['due','partial','overdue'])->orderBy('loan_installments.due_on')->limit(100)->get(),
+            'overdueInstallments' => $installments->filter(fn($i) => (int)$i->days_overdue > 0 || $i->status === 'overdue')->values(),
             'cashEntries' => DB::table('cash_ledger_entries')->leftJoin('users','users.id','=','cash_ledger_entries.created_by')
                 ->select('cash_ledger_entries.*','users.name as actor')->latest('cash_ledger_entries.id')->limit(100)->get(),
             'profitLossEntries' => DB::table('profit_loss_entries')->leftJoin('users','users.id','=','profit_loss_entries.created_by')
                 ->select('profit_loss_entries.*','users.name as actor')->latest('profit_loss_entries.id')->limit(100)->get(),
             'closures' => DB::table('account_closures')->join('accounts','accounts.id','=','account_closures.account_id')
                 ->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
-                ->select('account_closures.*','accounts.account_no','accounts.balance','users.name')
+                ->select('account_closures.*','accounts.account_no','accounts.balance','accounts.opened_on','users.name','members.member_no','members.id as member_id')
                 ->latest('account_closures.id')->limit(100)->get(),
             'memberReports' => DB::table('members')->join('users','users.id','=','members.user_id')
                 ->select('members.id','members.member_no','members.kyc_status','members.mcs_score','users.name','users.phone','users.status')
@@ -219,9 +293,42 @@ class AdminController extends Controller
             'documents' => DB::table('kyc_documents')->join('members','members.id','=','kyc_documents.member_id')
                 ->join('users','users.id','=','members.user_id')->select('kyc_documents.*','users.name','members.member_no')
                 ->latest('kyc_documents.id')->limit(100)->get(),
+            'dateFilter' => $dateFilter,
+            'customFrom' => $customFrom,
+            'customTo' => $customTo,
+            'filterStart' => $filterStart,
+            'filterEnd' => $filterEnd,
+            'filteredCollection' => $filteredCollection,
+            'filteredExpenses' => $filteredExpenses,
+            'filteredPnl' => $filteredPnl,
+            'bankAccounts' => DB::table('bank_accounts')->orderBy('bank_name')->get(),
+            'receipts' => DB::table('receipts')->join('members','members.id','=','receipts.member_id')
+                ->join('users','users.id','=','members.user_id')
+                ->select('receipts.*','users.name','members.member_no')->latest('receipts.id')->limit(100)->get(),
+            'rdInstallments' => DB::table('rd_installments')->join('accounts','accounts.id','=','rd_installments.account_id')
+                ->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
+                ->select('rd_installments.*','accounts.account_no','users.name')
+                ->whereIn('rd_installments.status',['scheduled','due','partial','overdue'])
+                ->orderBy('rd_installments.due_on')->limit(100)->get(),
+            'fdAccounts' => DB::table('accounts')->join('schemes','schemes.id','=','accounts.scheme_id')
+                ->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
+                ->where('schemes.type','fd')->select('accounts.*','users.name','members.member_no','schemes.annual_rate','schemes.name as scheme_name')
+                ->latest('accounts.id')->limit(100)->get(),
+            'rdAccounts' => DB::table('accounts')->join('schemes','schemes.id','=','accounts.scheme_id')
+                ->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
+                ->where('schemes.type','rd')->select('accounts.*','users.name','members.member_no','schemes.annual_rate','schemes.name as scheme_name','schemes.deposit_frequency')
+                ->latest('accounts.id')->limit(100)->get(),
             'settings' => DB::table('society_settings')->pluck('value', 'key'),
             'auditLogs' => DB::table('audit_logs')->leftJoin('users','users.id','=','audit_logs.actor_id')
                 ->select('audit_logs.*','users.name as actor')->latest('audit_logs.id')->limit(30)->get(),
+            'stmtMemberId' => $stmtMemberId,
+            'stmtFrom' => $stmtFrom,
+            'stmtTo' => $stmtTo,
+            'stmtAccountId' => $stmtAccountId,
+            'statementData' => $statementData,
+            'activeReportType' => $activeReportType,
+            'activeReport' => $activeReport,
+            'reportFilterActive' => $reportFilterActive,
         ]);
     }
 
@@ -261,16 +368,27 @@ class AdminController extends Controller
         $this->permit($request, 'member.approve');
         $data = $request->validate(['decision' => 'required|in:approve,reject']);
         $member = DB::table('members')->where('id', $id)->firstOrFail();
+        $adminId = $request->user()?->id ?: 1;
         $after = [
             'approved_at' => $data['decision'] === 'approve' ? now() : null,
-            'approved_by' => $request->user()->id, 'updated_at' => now(),
+            'approved_by' => $adminId,
+            'kyc_status' => $data['decision'] === 'approve' ? 'approved' : $member->kyc_status,
+            'updated_at' => now(),
         ];
-        DB::transaction(function () use ($request, $id, $member, $after, $data) {
+        DB::transaction(function () use ($request, $id, $member, $after, $data, $adminId) {
             DB::table('members')->where('id', $id)->update($after);
-            DB::table('users')->where('id', $member->user_id)->update(['status' => $data['decision'] === 'approve' ? 'active' : 'pending']);
+            DB::table('users')->where('id', $member->user_id)->update(['status' => $data['decision'] === 'approve' ? 'active' : 'pending', 'updated_at' => now()]);
+            if ($data['decision'] === 'approve') {
+                DB::table('kyc_documents')->where('member_id', $id)->where('status', 'pending')->update([
+                    'status' => 'approved',
+                    'reviewed_by' => $adminId,
+                    'reviewed_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
             $this->audit($request, 'member.'.$data['decision'], 'member', $id, $member, $after);
         });
-        return back()->with('ok', 'Member decision saved');
+        return back()->with('ok', $data['decision'] === 'approve' ? 'Member approved successfully' : 'Member decision saved');
     }
 
     public function createAccount(Request $request)
@@ -286,7 +404,9 @@ class AdminController extends Controller
             'applicant_address' => 'nullable|required_if:member_source,new|string|max:1000',
             'applicant_nominee' => 'nullable|required_if:member_source,new|string|max:120',
             'applicant_occupation' => 'nullable|string|max:120',
-            'applicant_date_of_birth' => 'nullable|date|before:today',
+            'applicant_date_of_birth' => 'nullable|date',
+            'date_of_joining' => 'nullable|date',
+            'account_opening_date' => 'nullable|date',
             'applicant_aadhaar' => 'nullable|required_if:member_source,new|digits:12',
             'applicant_pan' => ['nullable','regex:/^[A-Z]{5}[0-9]{4}[A-Z]$/'],
             'scheme_id' => 'required|exists:schemes,id',
@@ -314,13 +434,21 @@ class AdminController extends Controller
         DB::transaction(function () use ($request, $data, $scheme, $shares, $canApprove, $accountNo, $isNewApplicant, $member) {
             $memberId = $member?->id;
             $memberNo = $member?->member_no;
+            $joiningDate = !empty($data['date_of_joining']) ? Carbon::parse($data['date_of_joining']) : now();
+            $accountOpeningDate = !empty($data['account_opening_date']) ? Carbon::parse($data['account_opening_date']) : $joiningDate;
+
             if ($isNewApplicant) {
                 $user = User::create([
                     'name' => $data['applicant_name'], 'email' => $data['applicant_email'] ?? null,
                     'phone' => $data['applicant_phone'], 'password' => Hash::make(Str::random(48)),
                     'mpin_hash' => Hash::make($data['applicant_mpin']), 'role' => 'member', 'status' => 'pending',
                 ]);
-                $memberNo = 'MS-'.now()->format('Y').'-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
+                DB::table('users')->where('id', $user->id)->update([
+                    'created_at' => $joiningDate,
+                    'updated_at' => $joiningDate,
+                ]);
+
+                $memberNo = 'MS-'.$joiningDate->format('Y').'-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
                 $memberId = DB::table('members')->insertGetId([
                     'user_id' => $user->id, 'member_no' => $memberNo,
                     'address' => $data['applicant_address'], 'nominee_name' => $data['applicant_nominee'],
@@ -329,7 +457,7 @@ class AdminController extends Controller
                     'aadhaar_last4' => substr($data['applicant_aadhaar'], -4),
                     'pan_last4' => isset($data['applicant_pan']) ? substr($data['applicant_pan'], -4) : null,
                     'kyc_status' => 'not_submitted', 'mcs_score' => 500,
-                    'created_at' => now(), 'updated_at' => now(),
+                    'created_at' => $joiningDate, 'updated_at' => $joiningDate,
                 ]);
                 $this->audit($request, 'member.created_by_staff', 'member', $memberId, null, [
                     'member_no' => $memberNo, 'name' => $data['applicant_name'],
@@ -341,7 +469,9 @@ class AdminController extends Controller
                 'account_no' => $accountNo, 'member_id' => $memberId, 'scheme_id' => $data['scheme_id'],
                 'share_count' => $shares, 'monthly_commitment' => in_array($scheme->code, ['SAVINGS','RD-MONTHLY'], true) ? 500 * $shares : 0,
                 'principal' => $data['opening_deposit'], 'balance' => 0, 'custom_interest_rate' => $data['custom_interest_rate'] ?? null,
-                'status' => 'pending', 'onboarding_status' => 'awaiting_review', 'created_at' => now(), 'updated_at' => now(),
+                'status' => 'pending', 'onboarding_status' => 'awaiting_review',
+                'opened_on' => $accountOpeningDate->toDateString(),
+                'created_at' => $accountOpeningDate, 'updated_at' => $accountOpeningDate,
             ]);
             $account = DB::table('accounts')->where('id', $id)->firstOrFail();
             if ($canApprove) {
@@ -367,17 +497,55 @@ class AdminController extends Controller
     {
         $decision = $request->validate(['decision' => 'required|in:approve,reject', 'note' => 'nullable|string|max:1000']);
         $this->permit($request, $decision['decision'] === 'approve' ? 'account.approve' : 'account.reject');
-        $account = DB::table('accounts')->where('id', $id)->firstOrFail();
-        abort_unless($account->status === 'pending' && $account->onboarding_status === 'awaiting_review', 409, 'Account is not awaiting review.');
+        $account = DB::table('accounts')->where('id', $id)->first();
+        if (!$account) {
+            return back()->with('error', 'Account not found.');
+        }
+        if ($account->status !== 'pending' || $account->onboarding_status !== 'awaiting_review') {
+            return back()->with('error', 'Account is not awaiting review.');
+        }
+
         if ($decision['decision'] === 'approve') {
             $member = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
                 ->where('members.id', $account->member_id)
-                ->select('members.kyc_status', 'users.status as user_status')->firstOrFail();
-            abort_unless($member->user_status === 'active', 422, 'Approve the applicant as a member before approving this account.');
-            abort_unless($member->kyc_status === 'approved', 422, 'Approve the member KYC before requesting the opening payment.');
+                ->select('members.id as member_id', 'members.kyc_status', 'users.id as user_id', 'users.status as user_status')->first();
+
+            if (!$member) {
+                return back()->with('error', 'Associated member profile not found.');
+            }
+
+            $adminId = $request->user()?->id ?: 1;
+
+            // Auto-activate member profile and KYC if not yet active/approved so the admin workflow is seamless
+            if ($member->user_status !== 'active') {
+                DB::table('users')->where('id', $member->user_id)->update([
+                    'status' => 'active',
+                    'updated_at' => now(),
+                ]);
+            }
+            if ($member->kyc_status !== 'approved') {
+                DB::table('members')->where('id', $member->member_id)->update([
+                    'kyc_status' => 'approved',
+                    'approved_at' => now(),
+                    'approved_by' => $adminId,
+                    'updated_at' => now(),
+                ]);
+            }
+            DB::table('kyc_documents')->where('member_id', $member->member_id)->where('status', 'pending')->update([
+                'status' => 'approved',
+                'reviewed_by' => $adminId,
+                'reviewed_at' => now(),
+                'updated_at' => now(),
+            ]);
+
             DB::transaction(fn () => $this->requestOpeningPayment($request, $account));
         } else {
-            DB::table('accounts')->where('id', $id)->update(['status' => 'rejected', 'onboarding_status' => 'rejected', 'decision_note' => $decision['note'] ?? null, 'updated_at' => now()]);
+            DB::table('accounts')->where('id', $id)->update([
+                'status' => 'rejected',
+                'onboarding_status' => 'rejected',
+                'decision_note' => $decision['note'] ?? null,
+                'updated_at' => now(),
+            ]);
         }
         $this->audit($request, 'account.'.$decision['decision'], 'account', $id, $account, $decision);
         return back()->with('ok', $decision['decision'] === 'approve' ? 'Account approved; payment request sent to member' : 'Account rejected');
@@ -396,14 +564,27 @@ class AdminController extends Controller
     public function paymentDecision(Request $request, int $id)
     {
         $this->permit($request, 'payment.accept');
-        $data = $request->validate(['decision' => 'required|in:accepted,rejected', 'note' => 'nullable|string|max:1000']);
+        $data = $request->validate([
+            'decision' => 'required|in:accepted,rejected',
+            'note' => 'nullable|string|max:1000',
+            'payment_mode' => 'nullable|in:cash,bank',
+        ]);
         $payment = DB::table('payments')->where('id', $id)->firstOrFail();
-        abort_unless($payment->status === 'submitted', 409, 'Payment is not awaiting verification.');
-        DB::transaction(function () use ($request, $payment, $data) {
+        abort_unless(in_array($payment->status, ['submitted', 'requested']), 409, 'Payment is not awaiting verification.');
+
+        $mode = $data['payment_mode'] ?? ($request->input('payment_mode') ?: 'cash');
+        $location = $mode === 'cash' ? 'treasury' : 'bank';
+        $adminId = $request->user()?->id ?: 1;
+
+        DB::transaction(function () use ($request, $payment, $data, $mode, $location, $adminId) {
             DB::table('payments')->where('id', $payment->id)->update([
-                'status' => $data['decision'], 'review_note' => $data['note'] ?? null,
-                'reviewed_by' => $request->user()->id, 'reviewed_at' => now(), 'updated_at' => now(),
+                'status' => $data['decision'],
+                'review_note' => $data['note'] ?? ($mode === 'cash' ? 'Accepted in Cash at counter' : 'Accepted via Online Bank transfer'),
+                'reviewed_by' => $adminId,
+                'reviewed_at' => now(),
+                'updated_at' => now(),
             ]);
+
             if ($data['decision'] === 'accepted') {
                 $termMonths = (int) (DB::table('accounts')->join('schemes','schemes.id','=','accounts.scheme_id')
                     ->where('accounts.id',$payment->account_id)->value('schemes.term_months')
@@ -411,34 +592,74 @@ class AdminController extends Controller
                     ?: 12);
                 $openedOn = today();
                 DB::table('accounts')->where('id', $payment->account_id)->update([
-                    'status' => 'active', 'onboarding_status' => 'active', 'balance' => $payment->amount,
-                    'opened_on' => $openedOn, 'matures_on' => $openedOn->copy()->addMonthsNoOverflow($termMonths)->subDay(),
+                    'status' => 'active',
+                    'onboarding_status' => 'active',
+                    'balance' => $payment->amount,
+                    'opened_on' => $openedOn,
+                    'matures_on' => $openedOn->copy()->addMonthsNoOverflow($termMonths)->subDay(),
                     'updated_at' => now(),
                 ]);
                 DB::table('ledger_entries')->insert([
-                    'reference' => (string) Str::uuid(), 'account_id' => $payment->account_id, 'direction' => 'credit',
-                    'amount' => $payment->amount, 'description' => 'Verified opening payment '.$payment->reference,
-                    'status' => 'posted', 'created_by' => $request->user()->id, 'posted_at' => now(),
-                    'created_at' => now(), 'updated_at' => now(),
+                    'reference' => (string) Str::uuid(),
+                    'account_id' => $payment->account_id,
+                    'direction' => 'credit',
+                    'amount' => $payment->amount,
+                    'description' => 'Verified opening payment ('.strtoupper($mode).') '.$payment->reference,
+                    'status' => 'posted',
+                    'created_by' => $adminId,
+                    'posted_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
                 ]);
-                $account = DB::table('accounts')->where('id',$payment->account_id)->first();
-                FinanceLedger::cash('bank','credit','member_deposit',(float)$payment->amount,
-                    'Verified opening payment '.$payment->reference,$request->user()->id,'payment',$payment->id);
-                MemberNotifier::send(MemberNotifier::memberUserId($account->member_id),'payment',
-                    'Account activated','Your opening payment was verified and account '.$account->account_no.' is active.',
-                    'opening-payment-accepted-'.$payment->id,'/accounts');
+                $account = DB::table('accounts')->where('id', $payment->account_id)->first();
+                $receipt = ReceiptService::generate(
+                    $account->member_id,
+                    (float)$payment->amount,
+                    'account_opening_deposit',
+                    $mode,
+                    $payment->account_id,
+                    null,
+                    $payment->reference,
+                    'Verified opening payment ('.strtoupper($mode).') '.$payment->reference,
+                    $adminId
+                );
+                FinanceLedger::cash(
+                    $location,
+                    'credit',
+                    'member_deposit',
+                    (float)$payment->amount,
+                    'Verified opening payment ('.strtoupper($mode).') '.$payment->reference,
+                    $adminId,
+                    'payment',
+                    $payment->id
+                );
+                MemberNotifier::send(
+                    MemberNotifier::memberUserId($account->member_id),
+                    'payment',
+                    'Account activated',
+                    'Your opening payment was verified ('.strtoupper($mode).') and account '.$account->account_no.' is active. Receipt: '.$receipt->receipt_no,
+                    'opening-payment-accepted-'.$payment->id,
+                    '/accounts'
+                );
             } else {
-                DB::table('accounts')->where('id', $payment->account_id)->update(['onboarding_status' => 'payment_required', 'updated_at' => now()]);
-                $account = DB::table('accounts')->where('id',$payment->account_id)->first();
-                MemberNotifier::send(MemberNotifier::memberUserId($account->member_id),'payment',
-                    'Payment needs correction','The opening payment for '.$account->account_no.' was rejected. Check the UTR and submit again.',
-                    'opening-payment-rejected-'.$payment->id,'/accounts');
+                DB::table('accounts')->where('id', $payment->account_id)->update([
+                    'onboarding_status' => 'payment_required',
+                    'updated_at' => now()
+                ]);
+                $account = DB::table('accounts')->where('id', $payment->account_id)->first();
+                MemberNotifier::send(
+                    MemberNotifier::memberUserId($account->member_id),
+                    'payment',
+                    'Payment needs correction',
+                    'The opening payment for '.$account->account_no.' was rejected. Check details and submit again.',
+                    'opening-payment-rejected-'.$payment->id,
+                    '/accounts'
+                );
             }
         });
-        $memberId = DB::table('accounts')->where('id', $payment->account_id)->value('member_id');
-        CreditScore::recalculate($memberId);
-        $this->audit($request, 'payment.'.$data['decision'], 'payment', $id, $payment, $data);
-        return back()->with('ok', 'Payment decision saved');
+
+        $this->audit($request, 'payment.'.$data['decision'], 'payment', $id, $payment, array_merge($data, ['payment_mode' => $mode]));
+        return back()->with('ok', $data['decision'] === 'accepted' ? 'Payment accepted as '.strtoupper($mode).' & account activated' : 'Payment rejected');
     }
 
     public function postTransaction(Request $request)
@@ -467,7 +688,14 @@ class AdminController extends Controller
 
     public function loanDecision(Request $request, int $id)
     {
-        $data = $request->validate(['decision' => 'required|in:approved,rejected', 'sanctioned_amount' => 'nullable|numeric|min:1', 'annual_interest_rate'=>'nullable|numeric|min:0|max:36', 'note' => 'nullable|string|max:1000']);
+        $data = $request->validate([
+            'decision' => 'required|in:approved,rejected',
+            'sanctioned_amount' => 'nullable|numeric|min:1',
+            'annual_interest_rate' => 'nullable|numeric|min:0|max:36',
+            'note' => 'required_if:decision,rejected|nullable|string|max:1000',
+        ], [
+            'note.required_if' => 'A rejection reason is mandatory when rejecting a loan application.',
+        ]);
         $this->permit($request, $data['decision'] === 'approved' ? 'loan.approve' : 'loan.reject');
         $loan = DB::table('loan_applications')->where('id', $id)->firstOrFail();
         abort_unless(in_array($loan->status, ['submitted','under_review'], true), 409);
@@ -525,6 +753,19 @@ class AdminController extends Controller
                     'Interest and fine income '.$repayment->reference,$request->user()->id,'loan_repayment',$repayment->id);
                 FinanceLedger::profitLoss('income','loan_interest_and_fines',$income,
                     'Recognized from repayment '.$repayment->reference,$request->user()->id,'loan_repayment',$repayment->id);
+            }
+            if ($data['decision'] === 'accepted') {
+                ReceiptService::generate(
+                    $loan->member_id,
+                    (float)$repayment->amount,
+                    'emi_payment',
+                    $repayment->payment_mode ?? 'bank',
+                    null,
+                    $loan->id,
+                    $repayment->reference,
+                    "Repayment accepted. Principal: ₹{$allocation['principal']}, Interest: ₹{$allocation['interest']}, Penalty: ₹{$allocation['penalty']}",
+                    $request->user()->id
+                );
             }
             return $allocation;
         });
@@ -709,6 +950,39 @@ class AdminController extends Controller
         return back()->with('ok','Account closed and withdrawal posted');
     }
 
+    public function viewClosureCertificate(int $id)
+    {
+        $closure = DB::table('account_closures')
+            ->join('accounts', 'accounts.id', '=', 'account_closures.account_id')
+            ->leftJoin('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->join('members', 'members.id', '=', 'accounts.member_id')
+            ->join('users', 'users.id', '=', 'members.user_id')
+            ->where('account_closures.id', $id)
+            ->select('account_closures.*', 'accounts.account_no', 'accounts.balance', 'accounts.opened_on', 'schemes.name as scheme_name', 'users.name', 'users.phone', 'users.email', 'members.member_no', 'members.address')
+            ->firstOrFail();
+
+        return view('admin.closure-certificate', ['closure' => $closure]);
+    }
+
+    public function downloadClosureCertificate(int $id)
+    {
+        $closure = DB::table('account_closures')
+            ->join('accounts', 'accounts.id', '=', 'account_closures.account_id')
+            ->leftJoin('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->join('members', 'members.id', '=', 'accounts.member_id')
+            ->join('users', 'users.id', '=', 'members.user_id')
+            ->where('account_closures.id', $id)
+            ->select('account_closures.*', 'accounts.account_no', 'accounts.balance', 'accounts.opened_on', 'schemes.name as scheme_name', 'users.name', 'users.phone', 'users.email', 'members.member_no', 'members.address')
+            ->firstOrFail();
+
+        $html = view('admin.closure-certificate', ['closure' => $closure])->render();
+        $safeNo = str_replace(['/', '\\', ' '], '-', $closure->account_no);
+        return response($html, 200, [
+            'Content-Type' => 'text/html',
+            'Content-Disposition' => "attachment; filename=\"Closure-Certificate-{$safeNo}.html\"",
+        ]);
+    }
+
     public function updateFinanceSettings(Request $request)
     {
         abort_unless($request->user()->role === 'super_admin', 403);
@@ -729,63 +1003,231 @@ class AdminController extends Controller
     public function exportReport(Request $request, string $type)
     {
         $this->permit($request, 'reports.view');
-        abort_unless(in_array($type,['members','accounts','loans','transactions','cash','profit-loss'],true),404);
-        $filters = $request->validate(['from'=>'nullable|date','to'=>'nullable|date|after_or_equal:from']);
-        $from = isset($filters['from']) ? Carbon::parse($filters['from'])->toDateString() : null;
-        $to = isset($filters['to']) ? Carbon::parse($filters['to'])->toDateString() : null;
-        [$headers,$rows] = match ($type) {
-            'members' => [
-                ['Member No','Name','Phone','Status','KYC','MCS','Accounts','Active Balance','Loans','Outstanding Loan'],
-                DB::table('members')->join('users','users.id','=','members.user_id')
-                    ->select('members.member_no','users.name','users.phone','users.status','members.kyc_status','members.mcs_score')
-                    ->selectRaw('(SELECT COUNT(*) FROM accounts WHERE accounts.member_id=members.id) account_count')
-                    ->selectRaw("(SELECT COALESCE(SUM(balance),0) FROM accounts WHERE accounts.member_id=members.id AND accounts.status='active') account_balance")
-                    ->selectRaw('(SELECT COUNT(*) FROM loan_applications WHERE loan_applications.member_id=members.id) loan_count')
-                    ->selectRaw("(SELECT COALESCE(SUM(outstanding_principal),0) FROM loan_applications WHERE loan_applications.member_id=members.id AND loan_applications.status IN ('approved','disbursed')) loan_outstanding")
-                    ->orderBy('users.name')->get(),
-            ],
-            'accounts' => [
-                ['Account','Member','Scheme','Status','Opened','Matures','Balance','Rate'],
-                DB::table('accounts')->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
-                    ->join('schemes','schemes.id','=','accounts.scheme_id')
-                    ->select('accounts.account_no','users.name','schemes.name as scheme','accounts.status','accounts.opened_on','accounts.matures_on','accounts.balance')
-                    ->selectRaw('COALESCE(accounts.custom_interest_rate,schemes.annual_rate) rate')->orderBy('accounts.id')->get(),
-            ],
-            'loans' => [
-                ['Application','Member','Type','EMI','Requested','Sanctioned','Outstanding','Rate','Status','Created'],
-                DB::table('loan_applications')->join('members','members.id','=','loan_applications.member_id')->join('users','users.id','=','members.user_id')
-                    ->select('loan_applications.application_no','users.name','loan_applications.loan_type','loan_applications.emi_frequency',
-                        'loan_applications.amount','loan_applications.sanctioned_amount','loan_applications.outstanding_principal',
-                        'loan_applications.annual_interest_rate','loan_applications.status','loan_applications.created_at')->orderBy('loan_applications.id')->get(),
-            ],
-            'transactions' => [
-                ['Reference','Account','Direction','Amount','Description','Status','Posted'],
-                DB::table('ledger_entries')->join('accounts','accounts.id','=','ledger_entries.account_id')
-                    ->when($from,fn($q)=>$q->whereDate('ledger_entries.posted_at','>=',$from))->when($to,fn($q)=>$q->whereDate('ledger_entries.posted_at','<=',$to))
-                    ->select('ledger_entries.reference','accounts.account_no','ledger_entries.direction','ledger_entries.amount','ledger_entries.description','ledger_entries.status','ledger_entries.posted_at')->orderBy('ledger_entries.id')->get(),
-            ],
-            'cash' => [
-                ['Reference','Location','Direction','Category','Amount','Note','Date'],
-                DB::table('cash_ledger_entries')->when($from,fn($q)=>$q->whereDate('occurred_on','>=',$from))->when($to,fn($q)=>$q->whereDate('occurred_on','<=',$to))
-                    ->select('reference','location','direction','category','amount','note','occurred_on')->orderBy('id')->get(),
-            ],
-            default => [
-                ['Reference','Type','Category','Amount','Note','Date'],
-                DB::table('profit_loss_entries')->when($from,fn($q)=>$q->whereDate('occurred_on','>=',$from))->when($to,fn($q)=>$q->whereDate('occurred_on','<=',$to))
-                    ->select('reference','entry_type','category','amount','note','occurred_on')->orderBy('id')->get(),
-            ],
-        };
-        $filename = 'mahamilon-'.$type.'-'.today()->format('Ymd').'.csv';
-        return response()->streamDownload(function () use ($headers,$rows) {
-            $out = fopen('php://output','w');
-            fputcsv($out,$headers);
+        abort_unless(in_array($type, ['members', 'accounts', 'loans', 'transactions', 'cash', 'profit-loss', 'receipts'], true), 404);
+
+        $reportData = $this->queryReportData($request, $type);
+        $headers = $reportData['headers'];
+        $rows = $reportData['rows'];
+        $filename = 'mahamilon-' . $type . '-' . today()->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($headers, $rows) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, $headers);
             foreach ($rows as $row) {
-                $values = array_values((array)$row);
-                $values = array_map(fn($value) => is_string($value) && preg_match('/^[=+\-@]/',$value) ? "'".$value : $value, $values);
-                fputcsv($out,$values);
+                $values = array_values((array) $row);
+                $values = array_map(fn($value) => is_string($value) && preg_match('/^[=+\-@]/', $value) ? "'" . $value : $value, $values);
+                fputcsv($out, $values);
             }
             fclose($out);
-        },$filename,['Content-Type'=>'text/csv; charset=UTF-8']);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function printReport(Request $request)
+    {
+        $this->permit($request, 'reports.view');
+        $type = $request->query('report_type', 'transactions');
+        abort_unless(in_array($type, ['members', 'accounts', 'loans', 'transactions', 'cash', 'profit-loss', 'receipts'], true), 404);
+
+        $reportData = $this->queryReportData($request, $type);
+
+        $activeMemberName = !empty($reportData['filters']['member_id'])
+            ? DB::table('users')->join('members', 'members.user_id', '=', 'users.id')->where('members.id', $reportData['filters']['member_id'])->value('users.name')
+            : null;
+
+        $activeStaffName = !empty($reportData['filters']['staff_id'])
+            ? DB::table('users')->where('id', $reportData['filters']['staff_id'])->value('name')
+            : null;
+
+        return view('admin.report-print', [
+            'reportTitle' => $reportData['title'],
+            'type' => $type,
+            'headers' => $reportData['headers'],
+            'rows' => $reportData['rows'],
+            'totalRecords' => $reportData['totalRecords'],
+            'totalAmount' => $reportData['totalAmount'],
+            'avgAmount' => $reportData['avgAmount'],
+            'filters' => $reportData['filters'],
+            'activeMemberName' => $activeMemberName,
+            'activeStaffName' => $activeStaffName,
+        ]);
+    }
+
+    public function queryReportData(Request $request, string $type): array
+    {
+        $from = $request->query('from');
+        $to = $request->query('to');
+        $memberId = $request->query('member_id');
+        $staffId = $request->query('staff_id');
+        $paymentMode = $request->query('payment_mode');
+        $status = $request->query('status');
+        $minAmount = $request->query('amount_min');
+        $maxAmount = $request->query('amount_max');
+
+        $filters = [
+            'from' => $from,
+            'to' => $to,
+            'member_id' => $memberId,
+            'staff_id' => $staffId,
+            'payment_mode' => $paymentMode,
+            'status' => $status,
+            'amount_min' => $minAmount,
+            'amount_max' => $maxAmount,
+        ];
+
+        $title = match ($type) {
+            'members' => 'Member Registry & KYC Status Report',
+            'accounts' => 'Member Accounts & Balances Report',
+            'loans' => 'Loans, Approvals & Outstanding Report',
+            'receipts' => 'Payment Receipts & Collections Report',
+            'cash' => 'Cash & Vault Movement Ledger Report',
+            'profit-loss' => 'Profit & Loss (Income & Expense) Report',
+            default => 'Account Transactions & Ledger Movement Report',
+        };
+
+        [$headers, $rows, $totalAmount] = match ($type) {
+            'members' => (function () use ($memberId, $status) {
+                $q = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
+                    ->when($memberId, fn($query) => $query->where('members.id', $memberId))
+                    ->when($status && $status !== 'all', fn($query) => $query->where('users.status', $status))
+                    ->select('members.member_no', 'users.name', 'users.phone', 'users.status', 'members.kyc_status', 'members.mcs_score')
+                    ->selectRaw('(SELECT COUNT(*) FROM accounts WHERE accounts.member_id=members.id) as account_count')
+                    ->selectRaw("(SELECT COALESCE(SUM(balance),0) FROM accounts WHERE accounts.member_id=members.id AND accounts.status='active') as account_balance")
+                    ->selectRaw('(SELECT COUNT(*) FROM loan_applications WHERE loan_applications.member_id=members.id) as loan_count')
+                    ->selectRaw("(SELECT COALESCE(SUM(outstanding_principal),0) FROM loan_applications WHERE loan_applications.member_id=members.id AND loan_applications.status IN ('approved','disbursed')) as loan_outstanding")
+                    ->orderBy('users.name')->get();
+                $tot = (float) $q->sum('account_balance');
+                return [
+                    ['Member No', 'Name', 'Phone', 'Status', 'KYC', 'MCS', 'Accounts', 'Active Balance (INR)', 'Loans', 'Loan Outstanding (INR)'],
+                    $q,
+                    $tot
+                ];
+            })(),
+            'accounts' => (function () use ($memberId, $status, $minAmount, $maxAmount) {
+                $q = DB::table('accounts')->join('members', 'members.id', '=', 'accounts.member_id')
+                    ->join('users', 'users.id', '=', 'members.user_id')
+                    ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+                    ->when($memberId, fn($query) => $query->where('accounts.member_id', $memberId))
+                    ->when($status && $status !== 'all', fn($query) => $query->where('accounts.status', $status))
+                    ->when($minAmount, fn($query) => $query->where('accounts.balance', '>=', (float) $minAmount))
+                    ->when($maxAmount, fn($query) => $query->where('accounts.balance', '<=', (float) $maxAmount))
+                    ->select('accounts.account_no', 'users.name', 'schemes.name as scheme', 'accounts.status', 'accounts.opened_on', 'accounts.matures_on', 'accounts.balance')
+                    ->selectRaw('COALESCE(accounts.custom_interest_rate, schemes.annual_rate) as rate')
+                    ->orderBy('accounts.id')->get();
+                $tot = (float) $q->sum('balance');
+                return [
+                    ['Account No', 'Member', 'Scheme', 'Status', 'Opened On', 'Matures On', 'Balance (INR)', 'Rate %'],
+                    $q,
+                    $tot
+                ];
+            })(),
+            'loans' => (function () use ($from, $to, $memberId, $status, $minAmount, $maxAmount) {
+                $q = DB::table('loan_applications')->join('members', 'members.id', '=', 'loan_applications.member_id')
+                    ->join('users', 'users.id', '=', 'members.user_id')
+                    ->when($from, fn($query) => $query->whereDate('loan_applications.created_at', '>=', $from))
+                    ->when($to, fn($query) => $query->whereDate('loan_applications.created_at', '<=', $to))
+                    ->when($memberId, fn($query) => $query->where('loan_applications.member_id', $memberId))
+                    ->when($status && $status !== 'all', fn($query) => $query->where('loan_applications.status', $status))
+                    ->when($minAmount, fn($query) => $query->where('loan_applications.amount', '>=', (float) $minAmount))
+                    ->when($maxAmount, fn($query) => $query->where('loan_applications.amount', '<=', (float) $maxAmount))
+                    ->select('loan_applications.application_no', 'users.name', 'loan_applications.loan_type', 'loan_applications.emi_frequency',
+                        'loan_applications.amount', 'loan_applications.sanctioned_amount', 'loan_applications.outstanding_principal',
+                        'loan_applications.annual_interest_rate', 'loan_applications.status', 'loan_applications.created_at')
+                    ->orderBy('loan_applications.id')->get();
+                $tot = (float) $q->sum('outstanding_principal');
+                return [
+                    ['Application No', 'Member', 'Loan Type', 'EMI Freq', 'Requested (INR)', 'Sanctioned (INR)', 'Outstanding (INR)', 'Rate %', 'Status', 'Applied On'],
+                    $q,
+                    $tot
+                ];
+            })(),
+            'receipts' => (function () use ($from, $to, $memberId, $staffId, $paymentMode, $minAmount, $maxAmount) {
+                $q = DB::table('receipts')->join('members', 'members.id', '=', 'receipts.member_id')
+                    ->join('users', 'users.id', '=', 'members.user_id')
+                    ->leftJoin('users as staff', 'staff.id', '=', 'receipts.issued_by')
+                    ->when($from, fn($query) => $query->whereDate('receipts.created_at', '>=', $from))
+                    ->when($to, fn($query) => $query->whereDate('receipts.created_at', '<=', $to))
+                    ->when($memberId, fn($query) => $query->where('receipts.member_id', $memberId))
+                    ->when($staffId, fn($query) => $query->where('receipts.issued_by', $staffId))
+                    ->when($paymentMode && $paymentMode !== 'all', fn($query) => $query->where('receipts.payment_mode', $paymentMode))
+                    ->when($minAmount, fn($query) => $query->where('receipts.amount', '>=', (float) $minAmount))
+                    ->when($maxAmount, fn($query) => $query->where('receipts.amount', '<=', (float) $maxAmount))
+                    ->select('receipts.receipt_no', 'users.name as member_name', 'receipts.category', 'receipts.payment_mode',
+                        'receipts.amount', 'receipts.transaction_reference', 'receipts.created_at', 'staff.name as issued_by_name')
+                    ->orderByDesc('receipts.id')->get();
+                $tot = (float) $q->sum('amount');
+                return [
+                    ['Receipt No', 'Member', 'Category', 'Mode', 'Amount (INR)', 'Reference', 'Date & Time', 'Issued By'],
+                    $q,
+                    $tot
+                ];
+            })(),
+            'cash' => (function () use ($from, $to, $minAmount, $maxAmount) {
+                $q = DB::table('cash_ledger_entries')
+                    ->when($from, fn($query) => $query->whereDate('occurred_on', '>=', $from))
+                    ->when($to, fn($query) => $query->whereDate('occurred_on', '<=', $to))
+                    ->when($minAmount, fn($query) => $query->where('amount', '>=', (float) $minAmount))
+                    ->when($maxAmount, fn($query) => $query->where('amount', '<=', (float) $maxAmount))
+                    ->select('reference', 'location', 'direction', 'category', 'amount', 'note', 'occurred_on')
+                    ->orderByDesc('id')->get();
+                $tot = (float) $q->sum('amount');
+                return [
+                    ['Reference', 'Location', 'Direction', 'Category', 'Amount (INR)', 'Note', 'Date'],
+                    $q,
+                    $tot
+                ];
+            })(),
+            'profit-loss' => (function () use ($from, $to, $status, $minAmount, $maxAmount) {
+                $q = DB::table('profit_loss_entries')
+                    ->when($from, fn($query) => $query->whereDate('occurred_on', '>=', $from))
+                    ->when($to, fn($query) => $query->whereDate('occurred_on', '<=', $to))
+                    ->when($status && $status !== 'all', fn($query) => $query->where('entry_type', $status))
+                    ->when($minAmount, fn($query) => $query->where('amount', '>=', (float) $minAmount))
+                    ->when($maxAmount, fn($query) => $query->where('amount', '<=', (float) $maxAmount))
+                    ->select('reference', 'entry_type', 'category', 'amount', 'note', 'occurred_on')
+                    ->orderByDesc('id')->get();
+                $tot = (float) $q->sum('amount');
+                return [
+                    ['Reference', 'Type', 'Category', 'Amount (INR)', 'Note', 'Date'],
+                    $q,
+                    $tot
+                ];
+            })(),
+            default => (function () use ($from, $to, $memberId, $staffId, $status, $minAmount, $maxAmount) {
+                $q = DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
+                    ->join('members', 'members.id', '=', 'accounts.member_id')
+                    ->join('users', 'users.id', '=', 'members.user_id')
+                    ->when($from, fn($query) => $query->whereDate('ledger_entries.posted_at', '>=', $from))
+                    ->when($to, fn($query) => $query->whereDate('ledger_entries.posted_at', '<=', $to))
+                    ->when($memberId, fn($query) => $query->where('members.id', $memberId))
+                    ->when($staffId, fn($query) => $query->where('ledger_entries.created_by', $staffId))
+                    ->when($status && $status !== 'all', fn($query) => $query->where('ledger_entries.status', $status))
+                    ->when($minAmount, fn($query) => $query->where('ledger_entries.amount', '>=', (float) $minAmount))
+                    ->when($maxAmount, fn($query) => $query->where('ledger_entries.amount', '<=', (float) $maxAmount))
+                    ->select('ledger_entries.reference', 'users.name as member_name', 'accounts.account_no', 'ledger_entries.direction',
+                        'ledger_entries.amount', 'ledger_entries.description', 'ledger_entries.status', 'ledger_entries.posted_at')
+                    ->orderByDesc('ledger_entries.id')->get();
+                $tot = (float) $q->sum('amount');
+                return [
+                    ['Reference', 'Member', 'Account No', 'Direction', 'Amount (INR)', 'Description', 'Status', 'Posted At'],
+                    $q,
+                    $tot
+                ];
+            })(),
+        };
+
+        $totalRecords = count($rows);
+        $avgAmount = $totalRecords > 0 ? round($totalAmount / $totalRecords, 2) : 0.0;
+
+        return [
+            'title' => $title,
+            'type' => $type,
+            'headers' => $headers,
+            'rows' => $rows,
+            'totalRecords' => $totalRecords,
+            'totalAmount' => $totalAmount,
+            'avgAmount' => $avgAmount,
+            'filters' => $filters,
+        ];
     }
 
     public function createLoanOffer(Request $request)
@@ -822,6 +1264,126 @@ class AdminController extends Controller
         return back()->with('ok', 'Individual loan offer created');
     }
 
+    public function createLoanApplication(Request $request)
+    {
+        $this->staff($request);
+        $validator = Validator::make($request->all(), [
+            'member_id' => 'required|exists:members,id',
+            'loan_type' => 'required|in:personal,business,emergency',
+            'amount' => 'required|numeric|min:1000',
+            'tenure_months' => 'required|integer|min:1|max:120',
+            'emi_frequency' => 'nullable|in:daily,weekly,monthly',
+            'purpose' => 'required|string|max:1000',
+            'guarantor_name' => 'nullable|string|max:150',
+            'guarantor_phone' => 'nullable|string|max:30',
+            'guarantor_relation' => 'nullable|string|max:80',
+            'document' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+        ]);
+        if ($validator->fails()) {
+            return redirect('/admin#loans')->withErrors($validator, 'loanApply')->withInput();
+        }
+        $data = $validator->validated();
+
+        $savings = (float) DB::table('accounts')->where('member_id', $data['member_id'])->where('status', 'active')->sum('balance');
+        $maximumOffer = round($savings * 0.85, 2);
+        if ($data['loan_type'] !== 'emergency' && (float) $data['amount'] > $maximumOffer) {
+            return redirect('/admin#loans')->withErrors([
+                'amount' => 'Requested loan amount cannot exceed ₹' . number_format($maximumOffer, 2) . ' (85% of active savings of ₹' . number_format($savings, 2) . ').',
+            ], 'loanApply')->withInput();
+        }
+
+        $docPath = null;
+        if ($request->hasFile('document')) {
+            $docPath = $request->file('document')->store('loan-documents', 'private');
+        }
+
+        $appNo = SequenceService::nextLoanApplicationNo();
+        $score = CreditScore::recalculate((int)$data['member_id']);
+
+        $id = DB::table('loan_applications')->insertGetId([
+            'application_no' => $appNo,
+            'member_id' => $data['member_id'],
+            'loan_type' => $data['loan_type'],
+            'emi_frequency' => $data['emi_frequency'] ?? 'monthly',
+            'amount' => $data['amount'],
+            'monthly_income' => 0,
+            'tenure_months' => $data['tenure_months'],
+            'purpose' => $data['purpose'],
+            'guarantor_name' => $data['guarantor_name'] ?? null,
+            'guarantor_phone' => $data['guarantor_phone'] ?? null,
+            'guarantor_relation' => $data['guarantor_relation'] ?? null,
+            'document_path' => $docPath,
+            'mcs_snapshot' => $score,
+            'status' => 'submitted', // Initial status: Pending
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->audit($request, 'loan.applied', 'loan_application', $id, null, $data);
+        return back()->with('ok', "Loan application {$appNo} submitted successfully. Initial status: Pending verification.");
+    }
+
+    public function verifyLoanApplication(Request $request, int $id)
+    {
+        $this->staff($request);
+        $data = $request->validate([
+            'decision' => 'required|in:verified,rejected',
+            'verification_note' => 'required_if:decision,rejected|nullable|string|max:1000',
+        ], [
+            'verification_note.required_if' => 'A rejection reason is mandatory when rejecting loan verification.',
+        ]);
+        $loan = DB::table('loan_applications')->where('id', $id)->firstOrFail();
+        abort_unless(in_array($loan->status, ['submitted', 'under_review'], true), 409, 'Loan cannot be verified in current status.');
+
+        $newStatus = $data['decision'] === 'verified' ? 'under_review' : 'rejected';
+        DB::table('loan_applications')->where('id', $id)->update([
+            'status' => $newStatus,
+            'verified_by' => $request->user()->id,
+            'verified_at' => now(),
+            'verification_note' => $data['verification_note'] ?? ($data['decision'] === 'verified' ? '6-Point verification passed (KYC, Deposit history, Previous loans, Outstanding, Guarantor, Documents).' : 'Verification rejected.'),
+            'decision_note' => $data['decision'] === 'rejected' ? ($data['verification_note'] ?? 'Verification rejected.') : $loan->decision_note,
+            'updated_at' => now(),
+        ]);
+
+        $this->audit($request, 'loan.' . $data['decision'], 'loan_application', $id, null, $data);
+        return back()->with('ok', "Loan {$loan->application_no} marked as " . ucfirst($data['decision']) . ".");
+    }
+
+    public function sendEmiReminderNotification(Request $request, int $id)
+    {
+        $this->staff($request);
+        $inst = DB::table('loan_installments')
+            ->join('loan_applications', 'loan_applications.id', '=', 'loan_installments.loan_id')
+            ->join('members', 'members.id', '=', 'loan_applications.member_id')
+            ->where('loan_installments.id', $id)
+            ->select('loan_installments.*', 'loan_applications.application_no', 'members.user_id')
+            ->firstOrFail();
+
+        $days = Carbon::parse($inst->due_on)->isPast() ? Carbon::parse($inst->due_on)->diffInDays(today()) : 0;
+        $totalOutstanding = (float)$inst->principal_due + (float)$inst->interest_due + (float)$inst->penalty_due - (float)$inst->paid_amount;
+
+        MemberNotifier::send(
+            $inst->user_id,
+            'loan_overdue',
+            'Overdue EMI Reminder',
+            "Your loan {$inst->application_no} installment #{$inst->installment_no} of ₹" . number_format($totalOutstanding, 2) . " is {$days} days overdue. Please pay at your earliest to avoid additional penalty.",
+            'emi-reminder-' . $id . '-' . time(),
+            '/loan'
+        );
+
+        $this->audit($request, 'emi.reminder_sent', 'loan_installment', $id);
+        return back()->with('ok', "App push notification reminder sent for installment #{$inst->installment_no}.");
+    }
+
+    public function downloadLoanDocument(Request $request, int $id)
+    {
+        $this->staff($request);
+        $loan = DB::table('loan_applications')->where('id', $id)->firstOrFail();
+        abort_unless($loan->document_path && Storage::disk('private')->exists($loan->document_path), 404, 'Document not found.');
+        $this->audit($request, 'loan.document_downloaded', 'loan_application', $id);
+        return Storage::disk('private')->download($loan->document_path, "loan_{$loan->application_no}_document." . pathinfo($loan->document_path, PATHINFO_EXTENSION));
+    }
+
     public function downloadKyc(Request $request, int $id)
     {
         $this->staff($request);
@@ -829,6 +1391,18 @@ class AdminController extends Controller
         abort_unless(Storage::disk($document->disk)->exists($document->path), 404);
         $this->audit($request, 'kyc.downloaded', 'kyc_document', $id, null, ['type' => $document->type]);
         return Storage::disk($document->disk)->download($document->path, basename($document->path), ['Content-Type' => $document->mime]);
+    }
+
+    public function viewKyc(Request $request, int $id)
+    {
+        $this->staff($request);
+        $document = DB::table('kyc_documents')->where('id', $id)->firstOrFail();
+        abort_unless(Storage::disk($document->disk)->exists($document->path), 404);
+        $this->audit($request, 'kyc.viewed', 'kyc_document', $id, null, ['type' => $document->type]);
+        return Storage::disk($document->disk)->response($document->path, basename($document->path), [
+            'Content-Type' => $document->mime,
+            'Content-Disposition' => 'inline',
+        ]);
     }
 
     public function downloadMemberKycFolder(Request $request, int $id)
@@ -949,5 +1523,1087 @@ class AdminController extends Controller
         }
         $this->audit($request, 'settings.payment_updated', 'society_settings', null, null, $data);
         return back()->with('ok', 'Payment settings updated');
+    }
+
+    public function recordDeposit(Request $request)
+    {
+        $this->permit($request, 'deposit.create');
+        $data = $request->validate([
+            'account_id' => 'required|exists:accounts,id',
+            'amount' => 'required|numeric|min:1',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'note' => 'nullable|string|max:255',
+        ]);
+        $result = TransactionManager::recordDeposit(
+            (int) $data['account_id'],
+            (float) $data['amount'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $data['note'] ?? null,
+            $request->user()->id
+        );
+        $this->audit($request, 'deposit.recorded', 'account', $data['account_id'], null, $result);
+        return back()->with('ok', "Deposit of ₹" . number_format($data['amount'], 2) . " recorded. Receipt No: {$result['receipt_no']}");
+    }
+
+    public function recordWithdrawal(Request $request)
+    {
+        $this->permit($request, 'withdrawal.create');
+        $data = $request->validate([
+            'account_id' => 'required|exists:accounts,id',
+            'amount' => 'required|numeric|min:1',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'reason' => 'nullable|string|max:255',
+        ]);
+        try {
+            $result = TransactionManager::recordWithdrawal(
+                (int) $data['account_id'],
+                (float) $data['amount'],
+                $data['payment_mode'],
+                isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+                $data['reason'] ?? null,
+                $request->user()->id
+            );
+            $this->audit($request, 'withdrawal.recorded', 'account', $data['account_id'], null, $result);
+            return back()->with('ok', "Withdrawal of ₹" . number_format($data['amount'], 2) . " debited. Receipt No: {$result['receipt_no']}");
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['amount' => $e->getMessage()]);
+        }
+    }
+
+    public function disburseLoan(Request $request, int $id)
+    {
+        $this->permit($request, 'loan.disburse');
+        $data = $request->validate([
+            'disbursed_amount' => 'required|numeric|min:1',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+        ]);
+        $result = TransactionManager::recordLoanDisbursement(
+            $id,
+            (float) $data['disbursed_amount'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $request->user()->id
+        );
+        $this->audit($request, 'loan.disbursed', 'loan_application', $id, null, $result);
+        return back()->with('ok', "Loan disbursed successfully. Receipt No: {$result['receipt_no']}");
+    }
+
+    public function recordEmiPayment(Request $request, int $id)
+    {
+        $this->permit($request, 'loan.repayment');
+        $data = $request->validate([
+            'amount' => 'required|numeric|min:1',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'utr' => 'nullable|string|max:80',
+        ]);
+        $result = TransactionManager::recordEmiPayment(
+            $id,
+            (float) $data['amount'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $data['utr'] ?? null,
+            $request->user()->id
+        );
+        $this->audit($request, 'loan.emi_paid', 'loan_application', $id, null, $result);
+        return back()->with('ok', "EMI payment of ₹" . number_format($data['amount'], 2) . " accepted. Receipt No: {$result['receipt_no']}");
+    }
+
+    public function createFd(Request $request)
+    {
+        $this->permit($request, 'account.create');
+        $data = $request->validate([
+            'member_id' => 'required|exists:members,id',
+            'scheme_id' => 'required|exists:schemes,id',
+            'principal' => 'required|numeric|min:1000',
+            'annual_rate' => 'required|numeric|min:1|max:30',
+            'tenure_months' => 'required|integer|min:1|max:120',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'opening_date' => 'nullable|date',
+        ]);
+        $result = TransactionManager::openFdAccount(
+            (int) $data['member_id'],
+            (int) $data['scheme_id'],
+            (float) $data['principal'],
+            (float) $data['annual_rate'],
+            (int) $data['tenure_months'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $data['opening_date'] ?? null,
+            $request->user()->id
+        );
+        $this->audit($request, 'fd.created', 'account', $result['account_id'], null, $result);
+        return back()->with('ok', "Fixed Deposit created ({$result['certificate_no']}). Maturity: ₹" . number_format($result['maturity_amount'], 2));
+    }
+
+    public function createRd(Request $request)
+    {
+        $this->permit($request, 'account.create');
+        $scheme = DB::table('schemes')->where('id', $request->input('scheme_id'))->firstOrFail();
+        $isDaily = ($scheme->deposit_frequency ?? '') === 'daily';
+
+        $data = $request->validate([
+            'member_id' => 'required|exists:members,id',
+            'scheme_id' => 'required|exists:schemes,id',
+            'monthly_amount' => 'required|numeric|min:' . ($isDaily ? '10' : '100'),
+            'annual_rate' => 'required|numeric|min:1|max:30',
+            'tenure_months' => 'required|integer|min:1|max:' . ($isDaily ? '1000' : '120'),
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'start_date' => 'nullable|date',
+        ]);
+        $result = TransactionManager::openRdAccount(
+            (int) $data['member_id'],
+            (int) $data['scheme_id'],
+            (float) $data['monthly_amount'],
+            (float) $data['annual_rate'],
+            (int) $data['tenure_months'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $data['start_date'] ?? null,
+            $request->user()->id,
+            $scheme->deposit_frequency,
+            $isDaily ? (int) $data['tenure_months'] : null
+        );
+        $this->audit($request, 'rd.created', 'account', $result['account_id'], null, $result);
+        $unit = $isDaily ? 'days' : 'months';
+        return back()->with('ok', "Recurring Deposit account created ({$result['account_no']}). Installments scheduled: {$data['tenure_months']} {$unit}");
+    }
+
+    public function payRdInstallment(Request $request, int $id)
+    {
+        $this->permit($request, 'deposit.create');
+        $data = $request->validate([
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payment_date' => 'nullable|date',
+        ]);
+        $result = TransactionManager::payRdInstallment(
+            $id,
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $request->user()->id,
+            $data['payment_date'] ?? null
+        );
+        $this->audit($request, 'rd.installment_paid', 'rd_installment', $id, null, $result);
+        return back()->with('ok', "RD Installment collected. Receipt No: {$result['receipt_no']}");
+    }
+
+    public function payRdAdvance(Request $request, int $id)
+    {
+        $this->permit($request, 'deposit.create');
+        $data = $request->validate([
+            'days_count' => 'required|integer|min:1|max:365',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'payment_date' => 'nullable|date',
+        ]);
+        $result = TransactionManager::payBulkRdInstallments(
+            $id,
+            (int) $data['days_count'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $request->user()->id,
+            $data['payment_date'] ?? null
+        );
+        $this->audit($request, 'rd.advance_paid', 'account', $id, null, $result);
+        return back()->with('ok', "RD Collection recorded for {$result['count']} installments ({$result['range']}). Total Paid: ₹" . number_format($result['total_amount'], 2) . ". Receipt No: {$result['receipt_no']}");
+    }
+
+    public function getRdSchedule(int $id)
+    {
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->join('members', 'members.id', '=', 'accounts.member_id')
+            ->join('users', 'users.id', '=', 'members.user_id')
+            ->where('accounts.id', $id)
+            ->where('schemes.type', 'rd')
+            ->select(
+                'accounts.*',
+                'schemes.name as scheme_name',
+                'schemes.deposit_frequency',
+                'schemes.annual_rate as default_rate',
+                'users.name as member_name',
+                'users.phone',
+                'members.member_no'
+            )
+            ->firstOrFail();
+
+        $installments = DB::table('rd_installments')
+            ->where('account_id', $id)
+            ->orderBy('installment_no', 'asc')
+            ->get();
+
+        $paidCount = $installments->where('status', 'paid')->count();
+        $totalCount = $installments->count();
+        $dueCount = $installments->whereIn('status', ['due', 'overdue'])->count();
+        $totalPaidAmount = $installments->where('status', 'paid')->sum('paid_amount');
+        $nextUnpaid = $installments->firstWhere('status', '!==', 'paid');
+
+        return response()->json([
+            'account' => $account,
+            'installments' => $installments,
+            'summary' => [
+                'total_count' => $totalCount,
+                'paid_count' => $paidCount,
+                'remaining_count' => $totalCount - $paidCount,
+                'due_count' => $dueCount,
+                'total_paid_amount' => (float) $totalPaidAmount,
+                'target_amount' => (float) $account->maturity_amount,
+                'current_balance' => (float) $account->balance,
+                'commitment' => (float) $account->monthly_commitment,
+                'frequency' => $account->deposit_frequency,
+                'next_installment' => $nextUnpaid ? [
+                    'id' => $nextUnpaid->id,
+                    'installment_no' => $nextUnpaid->installment_no,
+                    'due_on' => $nextUnpaid->due_on,
+                    'amount_due' => (float) $nextUnpaid->amount_due,
+                    'status' => $nextUnpaid->status,
+                ] : null,
+            ]
+        ]);
+    }
+
+    public function viewFdCertificate(int $id)
+    {
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->join('members', 'members.id', '=', 'accounts.member_id')
+            ->join('users', 'users.id', '=', 'members.user_id')
+            ->where('accounts.id', $id)
+            ->where('schemes.type', 'fd')
+            ->select(
+                'accounts.*',
+                'schemes.name as scheme_name',
+                'schemes.annual_rate as default_rate',
+                'schemes.deposit_frequency',
+                'users.name as member_name',
+                'users.phone',
+                'users.email',
+                'members.member_no',
+                'members.address',
+                'members.nominee_name'
+            )
+            ->firstOrFail();
+
+        $societyName = DB::table('society_settings')->where('key', 'payee_name')->value('value') ?? 'Mahamilon Society';
+        return view('admin.fd-certificate', ['account' => $account, 'societyName' => $societyName]);
+    }
+
+    public function downloadFdCertificate(int $id)
+    {
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->join('members', 'members.id', '=', 'accounts.member_id')
+            ->join('users', 'users.id', '=', 'members.user_id')
+            ->where('accounts.id', $id)
+            ->where('schemes.type', 'fd')
+            ->select(
+                'accounts.*',
+                'schemes.name as scheme_name',
+                'schemes.annual_rate as default_rate',
+                'schemes.deposit_frequency',
+                'users.name as member_name',
+                'users.phone',
+                'users.email',
+                'members.member_no',
+                'members.address',
+                'members.nominee_name'
+            )
+            ->firstOrFail();
+
+        $societyName = DB::table('society_settings')->where('key', 'payee_name')->value('value') ?? 'Mahamilon Society';
+        $html = view('admin.fd-certificate', ['account' => $account, 'societyName' => $societyName])->render();
+        $filename = 'FD-Certificate-' . ($account->certificate_no ?: $account->account_no) . '.html';
+
+        return response($html, 200, [
+            'Content-Type' => 'text/html',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
+    public function createBankAccount(Request $request)
+    {
+        $this->permit($request, 'cash.manage');
+        $data = $request->validate([
+            'bank_name' => 'required|string|max:120',
+            'account_number' => 'required|string|max:50|unique:bank_accounts,account_number',
+            'ifsc_code' => 'nullable|string|max:20',
+            'branch_name' => 'nullable|string|max:120',
+            'opening_balance' => 'nullable|numeric|min:0',
+        ]);
+        $opening = (float) ($data['opening_balance'] ?? 0);
+        $id = DB::table('bank_accounts')->insertGetId([
+            'bank_name' => $data['bank_name'],
+            'account_number' => $data['account_number'],
+            'ifsc_code' => $data['ifsc_code'] ?? null,
+            'branch_name' => $data['branch_name'] ?? null,
+            'opening_balance' => $opening,
+            'current_balance' => $opening,
+            'status' => 'active',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->audit($request, 'bank_account.created', 'bank_account', $id, null, $data);
+        return back()->with('ok', "Bank account {$data['bank_name']} added successfully");
+    }
+
+    public function bankTransfer(Request $request)
+    {
+        $this->permit($request, 'bank.transfer');
+        $data = $request->validate([
+            'type' => 'required|in:cash_to_bank,bank_to_cash,bank_to_bank',
+            'amount' => 'required|numeric|min:1',
+            'source_bank_id' => 'nullable|exists:bank_accounts,id',
+            'target_bank_id' => 'nullable|exists:bank_accounts,id',
+            'note' => 'nullable|string|max:255',
+        ]);
+        try {
+            $result = TransactionManager::recordBankTransfer(
+                $data['type'],
+                (float) $data['amount'],
+                isset($data['source_bank_id']) ? (int) $data['source_bank_id'] : null,
+                isset($data['target_bank_id']) ? (int) $data['target_bank_id'] : null,
+                $data['note'] ?? null,
+                $request->user()->id
+            );
+            $this->audit($request, 'bank.transfer', 'bank_account', $data['source_bank_id'] ?? $data['target_bank_id'], null, $result);
+            return back()->with('ok', "Transfer of ₹" . number_format($data['amount'], 2) . " processed successfully");
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['amount' => $e->getMessage()]);
+        }
+    }
+
+    public function recordExpense(Request $request)
+    {
+        $this->permit($request, 'profit_loss.manage');
+        $data = $request->validate([
+            'category' => 'required|string|max:60',
+            'amount' => 'required|numeric|min:1',
+            'payment_mode' => 'required|in:cash,bank',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'bill' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'note' => 'nullable|string|max:255',
+        ]);
+        $billDisk = null;
+        $billPath = null;
+        if ($request->hasFile('bill')) {
+            $billDisk = 'private';
+            $billPath = $request->file('bill')->store('expenses/' . now()->format('Ym'), 'private');
+        }
+        $id = TransactionManager::recordExpense(
+            $data['category'],
+            (float) $data['amount'],
+            $data['payment_mode'],
+            isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
+            $billDisk,
+            $billPath,
+            $data['note'] ?? null,
+            $request->user()->id
+        );
+        $this->audit($request, 'expense.recorded', 'profit_loss_entry', $id, null, $data);
+        return back()->with('ok', "Expense of ₹" . number_format($data['amount'], 2) . " recorded");
+    }
+
+    public function viewReceipt(int $id)
+    {
+        $receipt = ReceiptService::getDetails($id);
+        abort_unless($receipt, 404, 'Receipt not found');
+        return view('admin.receipt', ['receipt' => $receipt]);
+    }
+
+    public function downloadReceipt(int $id)
+    {
+        $receipt = ReceiptService::getDetails($id);
+        abort_unless($receipt, 404, 'Receipt not found');
+        $html = view('admin.receipt', ['receipt' => $receipt])->render();
+        $safeNo = str_replace(['/', '\\'], '-', $receipt->receipt_no);
+        return response($html, 200, [
+            'Content-Type' => 'text/html',
+            'Content-Disposition' => "attachment; filename=\"receipt-{$safeNo}.html\"",
+        ]);
+    }
+
+    public function viewStatement(Request $request)
+    {
+        $this->staff($request);
+        $memberId = $request->query('member_id');
+        $from = $request->query('from_date', now()->startOfMonth()->toDateString());
+        $to = $request->query('to_date', today()->toDateString());
+        $acc = $request->query('account_id', 'all');
+        return redirect("/admin?stmt_member_id={$memberId}&stmt_from={$from}&stmt_to={$to}&stmt_account_id={$acc}#statements");
+    }
+
+    public function printStatement(int $id, Request $request)
+    {
+        $this->staff($request);
+        $fromDate = $request->input('from_date', now()->startOfMonth()->toDateString());
+        $toDate = $request->input('to_date', today()->toDateString());
+        $accountId = $request->input('account_id', 'all');
+
+        $res = $this->calculateStatement($id, $fromDate, $toDate, $accountId);
+
+        return view('admin.statement-print', [
+            'member' => $res['member'],
+            'accountLabel' => $res['accountLabel'],
+            'fromDate' => $fromDate,
+            'toDate' => $toDate,
+            'accountId' => $accountId,
+            'statement' => $res['statement'],
+        ]);
+    }
+
+    public function exportStatement(int $id, Request $request)
+    {
+        $this->staff($request);
+        $fromDate = $request->input('from_date', now()->startOfMonth()->toDateString());
+        $toDate = $request->input('to_date', today()->toDateString());
+        $accountId = $request->input('account_id', 'all');
+
+        $res = $this->calculateStatement($id, $fromDate, $toDate, $accountId);
+        $member = $res['member'];
+        $statement = $res['statement'];
+        $safeMemberNo = str_replace(['/', '\\'], '-', $member->member_no);
+        $filename = "statement-{$safeMemberNo}-" . today()->format('Ymd') . ".csv";
+
+        return response()->streamDownload(function () use ($member, $res, $fromDate, $toDate, $statement) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['MAHAMILON SOCIETY - MEMBER ACCOUNT STATEMENT']);
+            fputcsv($out, ['Member Name', $member->name, 'Member No', $member->member_no]);
+            fputcsv($out, ['Statement Period', "{$fromDate} to {$toDate}", 'Account', $res['accountLabel']]);
+            fputcsv($out, []);
+            fputcsv($out, ['FINANCIAL SCORECARD (SECTION 19)']);
+            fputcsv($out, ['Metric', 'Amount (INR)']);
+            fputcsv($out, ['1. Opening Balance', number_format($statement['opening_balance'], 2, '.', '')]);
+            fputcsv($out, ['2. Deposit', number_format($statement['deposits'], 2, '.', '')]);
+            fputcsv($out, ['3. Withdrawal', number_format($statement['withdrawals'], 2, '.', '')]);
+            fputcsv($out, ['4. Loan (Disbursed)', number_format($statement['loans'], 2, '.', '')]);
+            fputcsv($out, ['5. EMI (Repayments)', number_format($statement['emis'], 2, '.', '')]);
+            fputcsv($out, ['6. Interest (Credited)', number_format($statement['interest'], 2, '.', '')]);
+            fputcsv($out, ['7. Fine / Penalty', number_format($statement['fines'], 2, '.', '')]);
+            fputcsv($out, ['8. Closing Balance', number_format($statement['closing_balance'], 2, '.', '')]);
+            fputcsv($out, []);
+            fputcsv($out, ['ITEMIZED TRANSACTION LEDGER']);
+            fputcsv($out, ['Date', 'Reference', 'Receipt No', 'Account / Loan', 'Particulars', 'Payment Mode', 'Debit (Dr)', 'Credit (Cr)', 'Running Balance']);
+            fputcsv($out, [$fromDate, 'B/F', '', $res['accountLabel'], 'Opening Balance B/F', '-', '', '', number_format($statement['opening_balance'], 2, '.', '')]);
+            foreach ($statement['entries'] as $e) {
+                fputcsv($out, [
+                    $e['date'],
+                    $e['reference'],
+                    $e['receipt_no'] ?? '',
+                    $e['account_no'],
+                    $e['description'],
+                    $e['payment_mode'],
+                    $e['debit'] > 0 ? number_format($e['debit'], 2, '.', '') : '',
+                    $e['credit'] > 0 ? number_format($e['credit'], 2, '.', '') : '',
+                    number_format($e['running_balance'], 2, '.', ''),
+                ]);
+            }
+            fclose($out);
+        }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    public function calculateStatement(int $memberId, ?string $fromDate = null, ?string $toDate = null, string $accountId = 'all'): array
+    {
+        $fromDate = $fromDate ?: now()->startOfMonth()->toDateString();
+        $toDate = $toDate ?: today()->toDateString();
+
+        $member = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
+            ->where('members.id', $memberId)
+            ->select('members.*', 'users.name', 'users.phone', 'users.email')
+            ->firstOrFail();
+
+        $accounts = DB::table('accounts')->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->where('accounts.member_id', $memberId)
+            ->select('accounts.*', 'schemes.name as scheme_name', 'schemes.type as scheme_type')
+            ->get();
+
+        $accountIds = $accounts->pluck('id')->all();
+        $targetAccountIds = ($accountId !== 'all' && is_numeric($accountId))
+            ? array_values(array_intersect([(int) $accountId], $accountIds))
+            : $accountIds;
+
+        $targetAccount = ($accountId !== 'all' && is_numeric($accountId))
+            ? $accounts->firstWhere('id', (int) $accountId)
+            : null;
+
+        $accountLabel = $targetAccount
+            ? "{$targetAccount->account_no} ({$targetAccount->scheme_name} - " . strtoupper($targetAccount->scheme_type) . ")"
+            : "All Member Accounts (Consolidated)";
+
+        // 1. Opening Balance (Prior to $fromDate)
+        $priorCredits = count($targetAccountIds) > 0
+            ? (float) DB::table('ledger_entries')
+                ->whereIn('account_id', $targetAccountIds)
+                ->where('status', 'posted')
+                ->whereDate('posted_at', '<', $fromDate)
+                ->where('direction', 'credit')
+                ->sum('amount')
+            : 0.0;
+
+        $priorDebits = count($targetAccountIds) > 0
+            ? (float) DB::table('ledger_entries')
+                ->whereIn('account_id', $targetAccountIds)
+                ->where('status', 'posted')
+                ->whereDate('posted_at', '<', $fromDate)
+                ->where('direction', 'debit')
+                ->sum('amount')
+            : 0.0;
+
+        $openingBalance = round($priorCredits - $priorDebits, 2);
+
+        // 2. Period Deposits
+        $deposits = count($targetAccountIds) > 0
+            ? (float) DB::table('ledger_entries')
+                ->whereIn('account_id', $targetAccountIds)
+                ->where('status', 'posted')
+                ->whereDate('posted_at', '>=', $fromDate)
+                ->whereDate('posted_at', '<=', $toDate)
+                ->where('direction', 'credit')
+                ->where('description', 'not like', '%Interest%')
+                ->sum('amount')
+            : 0.0;
+
+        // 3. Period Withdrawals
+        $withdrawals = count($targetAccountIds) > 0
+            ? (float) DB::table('ledger_entries')
+                ->whereIn('account_id', $targetAccountIds)
+                ->where('status', 'posted')
+                ->whereDate('posted_at', '>=', $fromDate)
+                ->whereDate('posted_at', '<=', $toDate)
+                ->where('direction', 'debit')
+                ->sum('amount')
+            : 0.0;
+
+        // 4. Period Loans Disbursed
+        $loans = (float) DB::table('loan_applications')
+            ->where('member_id', $memberId)
+            ->whereIn('status', ['approved', 'disbursed', 'closed'])
+            ->whereDate('updated_at', '>=', $fromDate)
+            ->whereDate('updated_at', '<=', $toDate)
+            ->sum('sanctioned_amount');
+
+        // 5. Period EMI Repayments
+        $emis = (float) DB::table('loan_repayments')
+            ->join('loan_applications', 'loan_applications.id', '=', 'loan_repayments.loan_id')
+            ->where('loan_applications.member_id', $memberId)
+            ->where('loan_repayments.status', 'accepted')
+            ->whereDate('loan_repayments.created_at', '>=', $fromDate)
+            ->whereDate('loan_repayments.created_at', '<=', $toDate)
+            ->sum('loan_repayments.amount');
+
+        // 6. Period Interest Credited
+        $interestPostings = count($targetAccountIds) > 0
+            ? (float) DB::table('interest_postings')
+                ->whereIn('account_id', $targetAccountIds)
+                ->whereDate('period_end', '>=', $fromDate)
+                ->whereDate('period_end', '<=', $toDate)
+                ->sum('interest_amount')
+            : 0.0;
+
+        $ledgerInterest = count($targetAccountIds) > 0
+            ? (float) DB::table('ledger_entries')
+                ->whereIn('account_id', $targetAccountIds)
+                ->where('status', 'posted')
+                ->whereDate('posted_at', '>=', $fromDate)
+                ->whereDate('posted_at', '<=', $toDate)
+                ->where('direction', 'credit')
+                ->where('description', 'like', '%Interest%')
+                ->sum('amount')
+            : 0.0;
+
+        $interest = round(max($interestPostings, $ledgerInterest), 2);
+
+        // 7. Fine / Penalty
+        $loanFines = (float) DB::table('loan_repayments')
+            ->join('loan_applications', 'loan_applications.id', '=', 'loan_repayments.loan_id')
+            ->where('loan_applications.member_id', $memberId)
+            ->where('loan_repayments.status', 'accepted')
+            ->whereDate('loan_repayments.created_at', '>=', $fromDate)
+            ->whereDate('loan_repayments.created_at', '<=', $toDate)
+            ->sum('loan_repayments.penalty_component');
+
+        $rdFines = (float) DB::table('rd_installments')
+            ->join('accounts', 'accounts.id', '=', 'rd_installments.account_id')
+            ->where('accounts.member_id', $memberId)
+            ->whereDate('rd_installments.due_on', '>=', $fromDate)
+            ->whereDate('rd_installments.due_on', '<=', $toDate)
+            ->sum('rd_installments.penalty_due');
+
+        $fines = round($loanFines + $rdFines, 2);
+
+        // 8. Closing Balance
+        $closingBalance = round($openingBalance + $deposits + $interest - $withdrawals, 2);
+
+        // Fetch Ledger Rows
+        $ledgerRows = count($targetAccountIds) > 0
+            ? DB::table('ledger_entries')
+                ->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
+                ->leftJoin('receipts', 'receipts.transaction_reference', '=', 'ledger_entries.reference')
+                ->whereIn('ledger_entries.account_id', $targetAccountIds)
+                ->where('ledger_entries.status', 'posted')
+                ->whereDate('ledger_entries.posted_at', '>=', $fromDate)
+                ->whereDate('ledger_entries.posted_at', '<=', $toDate)
+                ->select(
+                    'ledger_entries.posted_at as date',
+                    'ledger_entries.reference',
+                    'receipts.receipt_no',
+                    'accounts.account_no',
+                    'ledger_entries.description',
+                    DB::raw("COALESCE(receipts.payment_mode, 'transfer') as payment_mode"),
+                    'ledger_entries.direction',
+                    'ledger_entries.amount'
+                )
+                ->get()
+            : collect();
+
+        $loanRows = ($accountId === 'all')
+            ? DB::table('loan_repayments')
+                ->join('loan_applications', 'loan_applications.id', '=', 'loan_repayments.loan_id')
+                ->leftJoin('receipts', 'receipts.transaction_reference', '=', 'loan_repayments.reference')
+                ->where('loan_applications.member_id', $memberId)
+                ->where('loan_repayments.status', 'accepted')
+                ->whereDate('loan_repayments.created_at', '>=', $fromDate)
+                ->whereDate('loan_repayments.created_at', '<=', $toDate)
+                ->select(
+                    'loan_repayments.created_at as date',
+                    'loan_repayments.reference',
+                    'receipts.receipt_no',
+                    'loan_applications.application_no as account_no',
+                    DB::raw("CONCAT('EMI Repayment (P: ₹', loan_repayments.principal_component, ', I: ₹', loan_repayments.interest_component, ')') as description"),
+                    DB::raw("COALESCE(receipts.payment_mode, 'bank') as payment_mode"),
+                    DB::raw("'credit' as direction"),
+                    'loan_repayments.amount'
+                )
+                ->get()
+            : collect();
+
+        $combined = $ledgerRows->concat($loanRows)->sortBy('date');
+
+        $entries = [];
+        $runningBal = $openingBalance;
+        foreach ($combined as $item) {
+            $debit = $item->direction === 'debit' ? (float) $item->amount : 0.0;
+            $credit = $item->direction === 'credit' ? (float) $item->amount : 0.0;
+            $runningBal = round($runningBal + $credit - $debit, 2);
+            $entries[] = [
+                'date' => $item->date,
+                'reference' => $item->reference,
+                'receipt_no' => $item->receipt_no ?? null,
+                'account_no' => $item->account_no,
+                'description' => $item->description,
+                'payment_mode' => strtoupper($item->payment_mode ?? 'CASH'),
+                'debit' => $debit,
+                'credit' => $credit,
+                'running_balance' => $runningBal,
+            ];
+        }
+
+        return [
+            'member' => $member,
+            'accounts' => $accounts,
+            'accountLabel' => $accountLabel,
+            'statement' => [
+                'opening_balance' => $openingBalance,
+                'deposits' => $deposits,
+                'withdrawals' => $withdrawals,
+                'loans' => $loans,
+                'emis' => $emis,
+                'interest' => $interest,
+                'fines' => $fines,
+                'closing_balance' => $closingBalance,
+                'entries' => $entries,
+            ],
+        ];
+    }
+
+    public function viewMemberProfile(int $id, Request $request)
+    {
+        $this->staff($request);
+        $permissions = StaffPermissions::for($request->user());
+
+        $member = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
+            ->leftJoin('users as approver', 'approver.id', '=', 'members.approved_by')
+            ->where('members.id', $id)
+            ->select(
+                'members.*',
+                'users.name', 'users.phone', 'users.email', 'users.status as user_status', 'users.created_at as registered_at',
+                'approver.name as approver_name'
+            )
+            ->first();
+        abort_unless($member, 404, 'Member not found');
+
+        $age = $member->date_of_birth ? Carbon::parse($member->date_of_birth)->age : null;
+
+        $documents = DB::table('kyc_documents')
+            ->leftJoin('users as reviewer', 'reviewer.id', '=', 'kyc_documents.reviewed_by')
+            ->where('kyc_documents.member_id', $id)
+            ->select('kyc_documents.*', 'reviewer.name as reviewer_name')
+            ->latest('kyc_documents.id')
+            ->get();
+
+        $accounts = DB::table('accounts')->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->where('accounts.member_id', $id)
+            ->select(
+                'accounts.*',
+                'schemes.name as scheme_name',
+                'schemes.type as scheme_type',
+                'schemes.annual_rate as scheme_annual_rate',
+                'schemes.term_months',
+                'schemes.deposit_frequency',
+                DB::raw('COALESCE(accounts.custom_interest_rate, schemes.annual_rate) as effective_rate')
+            )
+            ->latest('accounts.id')
+            ->get();
+
+        $savingsAccounts = $accounts->where('scheme_type', 'savings')->values();
+        $fdAccounts = $accounts->where('scheme_type', 'fd')->values();
+        $rdAccounts = $accounts->where('scheme_type', 'rd')->values();
+
+        $accountIds = $accounts->pluck('id')->all();
+
+        $rdInstallments = count($accountIds) > 0
+            ? DB::table('rd_installments')->join('accounts', 'accounts.id', '=', 'rd_installments.account_id')
+                ->whereIn('rd_installments.account_id', $accountIds)
+                ->select('rd_installments.*', 'accounts.account_no')
+                ->orderBy('rd_installments.due_on')
+                ->get()
+            : collect();
+
+        $loans = DB::table('loan_applications')
+            ->leftJoin('users as decider', 'decider.id', '=', 'loan_applications.decided_by')
+            ->where('loan_applications.member_id', $id)
+            ->select('loan_applications.*', 'decider.name as decider_name')
+            ->latest('loan_applications.id')
+            ->get();
+
+        $loanIds = $loans->pluck('id')->all();
+
+        $loanInstallments = count($loanIds) > 0
+            ? DB::table('loan_installments')->join('loan_applications', 'loan_applications.id', '=', 'loan_installments.loan_id')
+                ->whereIn('loan_installments.loan_id', $loanIds)
+                ->select('loan_installments.*', 'loan_applications.application_no')
+                ->orderBy('loan_installments.due_on')
+                ->get()
+            : collect();
+
+        $loanRepayments = count($loanIds) > 0
+            ? DB::table('loan_repayments')->join('loan_applications', 'loan_applications.id', '=', 'loan_repayments.loan_id')
+                ->leftJoin('users as reviewer', 'reviewer.id', '=', 'loan_repayments.reviewed_by')
+                ->whereIn('loan_repayments.loan_id', $loanIds)
+                ->select('loan_repayments.*', 'loan_applications.application_no', 'reviewer.name as reviewer_name')
+                ->latest('loan_repayments.id')
+                ->get()
+            : collect();
+
+        $payments = DB::table('payments')->join('accounts', 'accounts.id', '=', 'payments.account_id')
+            ->leftJoin('users as reviewer', 'reviewer.id', '=', 'payments.reviewed_by')
+            ->where('accounts.member_id', $id)
+            ->select('payments.*', 'accounts.account_no', 'reviewer.name as reviewer_name')
+            ->latest('payments.id')
+            ->get();
+
+        $receipts = DB::table('receipts')
+            ->leftJoin('users as issuer', 'issuer.id', '=', 'receipts.issued_by')
+            ->where('receipts.member_id', $id)
+            ->select('receipts.*', 'issuer.name as issuer_name')
+            ->latest('receipts.id')
+            ->get();
+
+        $withdrawals = count($accountIds) > 0
+            ? DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
+                ->leftJoin('users as creator', 'creator.id', '=', 'ledger_entries.created_by')
+                ->where('accounts.member_id', $id)
+                ->where('ledger_entries.direction', 'debit')
+                ->select('ledger_entries.*', 'accounts.account_no', 'creator.name as creator_name')
+                ->latest('ledger_entries.posted_at')
+                ->latest('ledger_entries.id')
+                ->get()
+            : collect();
+
+        $interestPostings = count($accountIds) > 0
+            ? DB::table('interest_postings')->join('accounts', 'accounts.id', '=', 'interest_postings.account_id')
+                ->where('accounts.member_id', $id)
+                ->select('interest_postings.*', 'accounts.account_no')
+                ->latest('interest_postings.period_end')
+                ->get()
+            : collect();
+
+        $totalProfitEarned = (float) $interestPostings->sum('interest_amount');
+
+        $loanPenalties = $loanInstallments->where('penalty_due', '>', 0)->values();
+        $rdPenalties = $rdInstallments->where('penalty_due', '>', 0)->values();
+        $totalPenaltiesDue = (float) $loanPenalties->whereIn('status', ['due', 'overdue', 'partial'])->sum('penalty_due')
+            + (float) $rdPenalties->whereIn('status', ['due', 'overdue', 'partial'])->sum('penalty_due');
+        $totalPenaltiesPaid = (float) $loanRepayments->sum('penalty_component');
+
+        $transactions = count($accountIds) > 0
+            ? DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
+                ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+                ->leftJoin('users as creator', 'creator.id', '=', 'ledger_entries.created_by')
+                ->where('accounts.member_id', $id)
+                ->select(
+                    'ledger_entries.*',
+                    'accounts.account_no',
+                    'schemes.name as scheme_name',
+                    'schemes.type as scheme_type',
+                    'creator.name as creator_name'
+                )
+                ->orderByDesc('ledger_entries.posted_at')
+                ->orderByDesc('ledger_entries.id')
+                ->get()
+            : collect();
+
+        $kpi = [
+            'totalSavings' => (float) $savingsAccounts->where('status', 'active')->sum('balance'),
+            'totalFd' => (float) $fdAccounts->where('status', 'active')->sum('balance'),
+            'totalRd' => (float) $rdAccounts->where('status', 'active')->sum('balance'),
+            'totalLoanOutstanding' => (float) $loans->whereIn('status', ['approved', 'disbursed'])->sum('outstanding_principal'),
+            'totalProfitEarned' => $totalProfitEarned,
+            'totalPenaltiesDue' => $totalPenaltiesDue,
+            'totalPenaltiesPaid' => $totalPenaltiesPaid,
+            'mcsScore' => $member->mcs_score ?? 500,
+            'accountsCount' => $accounts->count(),
+            'loansCount' => $loans->count(),
+            'receiptsCount' => $receipts->count(),
+            'transactionsCount' => $transactions->count(),
+        ];
+
+        return view('admin.member-profile', [
+            'member' => $member,
+            'age' => $age,
+            'documents' => $documents,
+            'accounts' => $accounts,
+            'savingsAccounts' => $savingsAccounts,
+            'fdAccounts' => $fdAccounts,
+            'rdAccounts' => $rdAccounts,
+            'rdInstallments' => $rdInstallments,
+            'loans' => $loans,
+            'loanInstallments' => $loanInstallments,
+            'loanRepayments' => $loanRepayments,
+            'payments' => $payments,
+            'receipts' => $receipts,
+            'withdrawals' => $withdrawals,
+            'interestPostings' => $interestPostings,
+            'loanPenalties' => $loanPenalties,
+            'rdPenalties' => $rdPenalties,
+            'transactions' => $transactions,
+            'kpi' => $kpi,
+            'permissions' => $permissions,
+        ]);
+    }
+
+    public function viewMemberCard(int $id)
+    {
+        $member = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
+            ->where('members.id', $id)
+            ->select('members.*', 'users.name', 'users.phone', 'users.email')
+            ->firstOrFail();
+
+        $photo = DB::table('kyc_documents')->where('member_id', $id)->where('type', 'photo')->where('status', 'approved')->first();
+
+        return view('admin.member-card', [
+            'member' => $member,
+            'photo' => $photo,
+        ]);
+    }
+
+    public function viewMemberForm(int $id)
+    {
+        $member = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
+            ->where('members.id', $id)
+            ->select('members.*', 'users.name', 'users.phone', 'users.email')
+            ->firstOrFail();
+
+        $account = DB::table('accounts')
+            ->leftJoin('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->where('accounts.member_id', $id)
+            ->select('accounts.*', 'schemes.name as scheme_name')
+            ->orderByDesc('accounts.id')
+            ->first();
+
+        $photo = DB::table('kyc_documents')
+            ->where('member_id', $id)
+            ->where('type', 'photo')
+            ->orderByRaw("CASE WHEN status = 'approved' THEN 1 WHEN status = 'pending' THEN 2 ELSE 3 END")
+            ->orderByDesc('id')
+            ->first();
+
+        return view('admin.member-form', [
+            'member' => $member,
+            'account' => $account,
+            'photo' => $photo,
+        ]);
+    }
+
+    public function updateMember(Request $request, int $id)
+    {
+        $this->permit($request, 'member.approve');
+        $member = DB::table('members')->where('id', $id)->firstOrFail();
+        $user = DB::table('users')->where('id', $member->user_id)->firstOrFail();
+
+        $data = $request->validate([
+            'member_no' => 'required|string|max:50|unique:members,member_no,' . $member->id,
+            'name' => 'required|string|max:120',
+            'phone' => 'required|string|max:20|unique:users,phone,' . $user->id,
+            'email' => 'nullable|email|max:120|unique:users,email,' . $user->id,
+            'status' => 'required|in:active,pending,suspended,blocked',
+            'mpin' => 'nullable|digits:6',
+            'address' => 'required|string|max:1000',
+            'nominee_name' => 'required|string|max:120',
+            'occupation' => 'nullable|string|max:120',
+            'date_of_birth' => 'nullable|date',
+            'created_at' => 'nullable|date',
+            'aadhaar' => 'nullable|string|max:20',
+            'pan' => 'nullable|string|max:20',
+            'kyc_status' => 'required|in:not_submitted,pending,approved,rejected',
+            'mcs_score' => 'nullable|integer|min:300|max:900',
+        ]);
+
+        DB::transaction(function () use ($request, $member, $user, $data) {
+            $userUpdates = [
+                'name' => $data['name'],
+                'phone' => $data['phone'],
+                'email' => $data['email'] ?? null,
+                'status' => $data['status'],
+                'updated_at' => now(),
+            ];
+            if (!empty($data['mpin'])) {
+                $userUpdates['mpin_hash'] = Hash::make($data['mpin']);
+            }
+            if (!empty($data['created_at'])) {
+                $joiningDate = Carbon::parse($data['created_at']);
+                $userUpdates['created_at'] = $joiningDate;
+            }
+            DB::table('users')->where('id', $user->id)->update($userUpdates);
+
+            $memberUpdates = [
+                'member_no' => $data['member_no'],
+                'address' => $data['address'],
+                'nominee_name' => $data['nominee_name'],
+                'occupation' => $data['occupation'] ?? null,
+                'date_of_birth' => $data['date_of_birth'] ?? null,
+                'kyc_status' => $data['kyc_status'],
+                'updated_at' => now(),
+            ];
+            if (!empty($data['created_at'])) {
+                $memberUpdates['created_at'] = Carbon::parse($data['created_at']);
+            }
+            if (isset($data['mcs_score'])) {
+                $memberUpdates['mcs_score'] = (int) $data['mcs_score'];
+            }
+            if (!empty($data['aadhaar'])) {
+                $cleanAadhaar = preg_replace('/\D/', '', $data['aadhaar']);
+                $memberUpdates['aadhaar_last4'] = substr($cleanAadhaar, -4);
+            }
+            if (!empty($data['pan'])) {
+                $cleanPan = strtoupper(trim($data['pan']));
+                $memberUpdates['pan_last4'] = substr($cleanPan, -4);
+            }
+            if ($data['kyc_status'] === 'approved' && $member->kyc_status !== 'approved') {
+                $memberUpdates['approved_at'] = now();
+                $memberUpdates['approved_by'] = $request->user()?->id ?: 1;
+            }
+            DB::table('members')->where('id', $member->id)->update($memberUpdates);
+
+            $this->audit($request, 'member.updated', 'member', $member->id, null, [
+                'member_no' => $data['member_no'],
+                'name' => $data['name'],
+                'phone' => $data['phone'],
+                'status' => $data['status'],
+                'kyc_status' => $data['kyc_status'],
+            ]);
+        });
+
+        return back()->with('ok', 'Customer ' . $data['member_no'] . ' (' . $data['name'] . ') updated successfully.');
+    }
+
+    public function deleteMember(Request $request, int $id)
+    {
+        $this->permit($request, 'member.approve');
+        $member = DB::table('members')->where('id', $id)->firstOrFail();
+        $user = DB::table('users')->where('id', $member->user_id)->firstOrFail();
+
+        DB::transaction(function () use ($request, $member, $user) {
+            $accountIds = DB::table('accounts')->where('member_id', $member->id)->pluck('id')->toArray();
+            $loanIds = DB::table('loan_applications')->where('member_id', $member->id)->pluck('id')->toArray();
+
+            // 1. Clean up loans and related repayments / installments
+            if (!empty($loanIds)) {
+                DB::table('loan_repayments')->whereIn('loan_id', $loanIds)->delete();
+                DB::table('loan_installments')->whereIn('loan_id', $loanIds)->delete();
+                DB::table('receipts')->whereIn('loan_id', $loanIds)->delete();
+                DB::table('loan_applications')->whereIn('id', $loanIds)->delete();
+            }
+
+            // 2. Clean up any loan repayments submitted by this user
+            DB::table('loan_repayments')->where('submitted_by', $user->id)->delete();
+
+            // 3. Clean up accounts and all dependent financial records
+            if (!empty($accountIds)) {
+                DB::table('receipts')->whereIn('account_id', $accountIds)->delete();
+                DB::table('rd_installments')->whereIn('account_id', $accountIds)->delete();
+                DB::table('account_closures')->whereIn('account_id', $accountIds)->delete();
+                DB::table('interest_postings')->whereIn('account_id', $accountIds)->delete();
+                DB::table('ledger_entries')->whereIn('account_id', $accountIds)->delete();
+                DB::table('payments')->whereIn('account_id', $accountIds)->delete();
+                DB::table('accounts')->whereIn('id', $accountIds)->delete();
+            }
+
+            // 4. Clean up member-specific records
+            DB::table('receipts')->where('member_id', $member->id)->delete();
+            DB::table('kyc_documents')->where('member_id', $member->id)->delete();
+            DB::table('member_notifications')->where('user_id', $user->id)->delete();
+            DB::table('api_tokens')->where('user_id', $user->id)->delete();
+
+            // 5. Delete member profile and user record
+            DB::table('members')->where('id', $member->id)->delete();
+            DB::table('users')->where('id', $user->id)->delete();
+
+            $this->audit($request, 'member.deleted', 'member', $member->id, null, [
+                'member_no' => $member->member_no,
+                'name' => $user->name,
+                'phone' => $user->phone,
+            ]);
+        });
+
+        return back()->with('ok', 'Customer ' . $member->member_no . ' (' . $user->name . ') deleted successfully.');
+    }
+
+    public function downloadDatabaseBackup(Request $request)
+    {
+        $this->permit($request, 'backup.manage');
+        $this->audit($request, 'backup.downloaded', 'database', null);
+
+        $filename = 'mahamilon_backup_' . now()->format('Y-m-d_His') . '.sql';
+        $tables = ['users', 'members', 'schemes', 'accounts', 'ledger_entries', 'loan_applications', 'loan_installments', 'loan_repayments', 'kyc_documents', 'payments', 'cash_ledger_entries', 'profit_loss_entries', 'account_closures', 'interest_postings', 'member_notifications', 'society_settings', 'bank_accounts', 'receipts', 'rd_installments', 'audit_logs'];
+
+        $sql = "-- Mahamilon Society Database Backup\n-- Generated on: " . now()->toIso8601String() . "\n\n";
+
+        foreach ($tables as $table) {
+            if (!Schema::hasTable($table)) continue;
+            $rows = DB::table($table)->get();
+            $sql .= "-- Table: {$table}\n";
+            foreach ($rows as $row) {
+                $attrs = (array) $row;
+                $keys = implode(', ', array_map(fn($k) => "`{$k}`", array_keys($attrs)));
+                $vals = implode(', ', array_map(function ($v) {
+                    if ($v === null) return 'NULL';
+                    return "'" . addslashes((string) $v) . "'";
+                }, array_values($attrs)));
+                $sql .= "INSERT INTO `{$table}` ({$keys}) VALUES ({$vals});\n";
+            }
+            $sql .= "\n";
+        }
+
+        return response($sql, 200, [
+            'Content-Type' => 'application/sql',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
     }
 }

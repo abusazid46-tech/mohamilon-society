@@ -14,26 +14,31 @@ final class StaffPermissions
         'account.reject' => 'Reject account requests',
         'payment.accept' => 'Accept or reject payments',
         'transaction.create' => 'Post account transactions',
+        'deposit.create' => 'Collect deposits and RD installments',
+        'withdrawal.create' => 'Process member withdrawals',
         'loan.offer' => 'Create individual loan offers',
         'loan.approve' => 'Approve loan applications',
         'loan.reject' => 'Reject loan applications',
+        'loan.disburse' => 'Disburse approved loans',
         'loan.repayment' => 'Accept or reject loan repayments',
         'loan.fine' => 'Set or waive overdue EMI fines',
+        'bank.transfer' => 'Execute bank contra transfers',
         'interest.manage' => 'Set member-specific interest rates',
         'account.close' => 'Manage maturity and account closures',
         'cash.manage' => 'Post bank and treasury cash entries',
         'profit_loss.manage' => 'Post income and expense adjustments',
         'reports.view' => 'View and export operational reports',
+        'backup.manage' => 'Download and manage database backups',
     ];
 
     public static function defaults(string $role): array
     {
         return match ($role) {
             'super_admin' => array_keys(self::DEFINITIONS),
-            'manager' => ['member.approve','kyc.approve','account.create','account.approve','account.reject','payment.accept','transaction.create','loan.offer','loan.approve','loan.reject','loan.repayment','loan.fine','interest.manage','account.close','cash.manage','profit_loss.manage','reports.view'],
-            'secretary' => ['member.approve','kyc.approve'],
-            'president' => ['loan.offer','loan.approve','loan.reject'],
-            'agent' => [],
+            'manager' => ['member.approve','kyc.approve','account.create','account.approve','account.reject','payment.accept','transaction.create','deposit.create','withdrawal.create','loan.offer','loan.approve','loan.reject','loan.disburse','loan.repayment','loan.fine','bank.transfer','interest.manage','account.close','cash.manage','profit_loss.manage','reports.view'],
+            'secretary' => ['member.approve','kyc.approve','deposit.create','reports.view'],
+            'president' => ['loan.offer','loan.approve','loan.reject','reports.view'],
+            'agent' => ['deposit.create','loan.repayment','reports.view'],
             default => [],
         };
     }

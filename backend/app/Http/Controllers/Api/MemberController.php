@@ -102,15 +102,25 @@ class MemberController extends Controller
             ->where('accounts.member_id', $member->id)
             ->select('payments.*', 'accounts.account_no')->latest('payments.id')->get();
         $totalSavings = (float) $accounts->where('status', 'active')->sum('balance');
+        $fdBalance = (float) $accounts->where('scheme_type', 'fd')->where('status', 'active')->sum('balance');
+        $rdBalance = (float) $accounts->where('scheme_type', 'rd')->where('status', 'active')->sum('balance');
+        $savingsBalance = (float) $accounts->where('scheme_type', 'savings')->where('status', 'active')->sum('balance');
+        $kycRejection = DB::table('kyc_documents')->where('member_id', $member->id)->where('status', 'rejected')->latest('id')->first();
         return [
             'profile' => [
                 'name' => $request->user()->name, 'member_no' => $member->member_no, 'phone' => $request->user()->phone,
                 'email' => $request->user()->email, 'address' => $member->address, 'nominee' => $member->nominee_name,
                 'occupation' => $member->occupation, 'kyc_status' => $member->kyc_status,
-                'total_balance' => (string) $totalSavings, 'active_accounts' => $accounts->where('status', 'active')->count(),
+                'kyc_rejection_note' => $kycRejection ? $kycRejection->review_note : null,
+                'total_balance' => (string) $totalSavings,
+                'savings_balance' => (string) $savingsBalance,
+                'fd_balance' => (string) $fdBalance,
+                'rd_balance' => (string) $rdBalance,
+                'active_accounts' => $accounts->where('status', 'active')->count(),
                 'mcs_score' => $score, 'maximum_loan' => round($totalSavings * .85, 2),
             ],
             'accounts' => $accounts, 'payments' => $payments,
+            'receipts' => DB::table('receipts')->where('member_id', $member->id)->latest('id')->limit(50)->get(),
             'loans' => DB::table('loan_applications')->where('member_id', $member->id)->latest()->get(),
             'installments' => DB::table('loan_installments')->join('loan_applications','loan_applications.id','=','loan_installments.loan_id')
                 ->where('loan_applications.member_id',$member->id)
@@ -120,9 +130,24 @@ class MemberController extends Controller
                 ->select('loan_repayments.*','loan_applications.application_no')->latest('loan_repayments.id')->get(),
             'notifications' => DB::table('member_notifications')->where('user_id',$request->user()->id)
                 ->latest('id')->limit(50)->get(),
+            'rd_installments' => DB::table('rd_installments')->join('accounts','accounts.id','=','rd_installments.account_id')
+                ->where('accounts.member_id', $member->id)->select('rd_installments.*', 'accounts.account_no')->orderBy('due_on')->limit(100)->get(),
+            'profit_earned' => (float) DB::table('interest_postings')->join('accounts','accounts.id','=','interest_postings.account_id')
+                ->where('accounts.member_id', $member->id)->sum('interest_amount'),
+            'penalties_due' => (float) DB::table('loan_installments')->join('loan_applications','loan_applications.id','=','loan_installments.loan_id')
+                ->where('loan_applications.member_id', $member->id)->whereIn('loan_installments.status',['due','overdue','partial'])->sum('penalty_due'),
+            'documents' => DB::table('kyc_documents')->where('member_id', $member->id)->select('id','type','mime','status','review_note','created_at')->latest('id')->get(),
+            'withdrawals' => DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
+                ->where('accounts.member_id', $member->id)->where('ledger_entries.direction', 'debit')->select('ledger_entries.*', 'accounts.account_no')->latest('ledger_entries.id')->limit(50)->get(),
             'ledger' => DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
                 ->where('accounts.member_id', $member->id)->select('ledger_entries.*', 'accounts.account_no')->latest('ledger_entries.id')->limit(50)->get(),
         ];
+    }
+
+    public function receipts(Request $request)
+    {
+        $member = $this->member($request);
+        return DB::table('receipts')->where('member_id', $member->id)->latest('id')->paginate(20);
     }
 
     public function openAccount(Request $request)
