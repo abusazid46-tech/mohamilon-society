@@ -1677,7 +1677,21 @@
                                     <i class="bi bi-printer"></i> Form
                                 </a>
                                 <button type="button" 
-                                    data-member="{{ htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8') }}"
+                                    data-id="{{ $m->id }}"
+                                    data-member-no="{{ $m->member_no }}"
+                                    data-name="{{ $m->name }}"
+                                    data-phone="{{ $m->phone }}"
+                                    data-email="{{ $m->email }}"
+                                    data-status="{{ $m->user_status ?? $m->status ?? 'active' }}"
+                                    data-kyc-status="{{ $m->kyc_status ?? 'not_submitted' }}"
+                                    data-joining-date="{{ $m->created_at ? substr($m->created_at, 0, 10) : '' }}"
+                                    data-dob="{{ $m->date_of_birth ? substr($m->date_of_birth, 0, 10) : '' }}"
+                                    data-aadhaar="{{ $m->aadhaar_last4 ?? '' }}"
+                                    data-pan="{{ $m->pan_last4 ?? '' }}"
+                                    data-nominee="{{ $m->nominee_name ?? '' }}"
+                                    data-occupation="{{ $m->occupation ?? '' }}"
+                                    data-score="{{ $m->mcs_score ?? 500 }}"
+                                    data-address="{{ $m->address ?? '' }}"
                                     onclick="openEditMemberModal(this)"
                                     style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details">
                                     <i class="bi bi-pencil-square"></i> Edit
@@ -2113,20 +2127,18 @@
                                 <div style="display: inline-flex; align-items: center; gap: 4px;">
                                     @if($can('deposit.create') || $can('withdrawal.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager','secretary'], true))
                                     <button type="button" class="button" style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: #0f172a; display: inline-flex; align-items: center; gap: 3px; border: none; font-weight: 700; cursor: pointer; border-radius: 4px;"
-                                        data-tx="{{ htmlspecialchars(json_encode([
-                                            'id' => $r->id,
-                                            'receipt_no' => $r->receipt_no,
-                                            'account_id' => $r->account_id,
-                                            'account_no' => $r->account_no ?? '',
-                                            'name' => $r->name,
-                                            'member_no' => $r->member_no,
-                                            'amount' => (float)$r->amount,
-                                            'payment_mode' => $r->payment_mode,
-                                            'bank_account_id' => $r->bank_account_id ?? null,
-                                            'notes' => $r->notes,
-                                            'date' => \Carbon\Carbon::parse($r->created_at)->format('Y-m-d'),
-                                            'category' => $r->category,
-                                        ]), ENT_QUOTES, 'UTF-8') }}"
+                                        data-id="{{ $r->id }}"
+                                        data-receipt-no="{{ $r->receipt_no }}"
+                                        data-account-id="{{ $r->account_id }}"
+                                        data-account-no="{{ $r->account_no ?? '' }}"
+                                        data-name="{{ $r->name }}"
+                                        data-member-no="{{ $r->member_no }}"
+                                        data-amount="{{ (float)$r->amount }}"
+                                        data-payment-mode="{{ $r->payment_mode }}"
+                                        data-bank-id="{{ $r->bank_account_id ?? '' }}"
+                                        data-notes="{{ $r->notes ?? '' }}"
+                                        data-date="{{ \Carbon\Carbon::parse($r->created_at)->format('Y-m-d') }}"
+                                        data-category="{{ $r->category }}"
                                         onclick="openEditDepositModal(this)"
                                         title="Edit / Correct Wrong Entry">
                                         <i class="bi bi-pencil-square"></i> Edit
@@ -2420,20 +2432,18 @@
                 <div style="display:inline-flex;align-items:center;gap:4px;">
                     @if($can('deposit.create') || $can('withdrawal.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager','secretary'], true))
                     <button type="button" class="button" style="padding:4px 8px;font-size:11px;background:#f59e0b;color:#0f172a;font-weight:700;border:none;border-radius:4px;cursor:pointer;"
-                        data-tx="{{ htmlspecialchars(json_encode([
-                            'id' => $r->id,
-                            'receipt_no' => $r->receipt_no,
-                            'account_id' => $r->account_id,
-                            'account_no' => $r->account_no ?? '',
-                            'name' => $r->name,
-                            'member_no' => $r->member_no,
-                            'amount' => (float)$r->amount,
-                            'payment_mode' => $r->payment_mode,
-                            'bank_account_id' => $r->bank_account_id ?? null,
-                            'notes' => $r->notes,
-                            'date' => \Carbon\Carbon::parse($r->created_at)->format('Y-m-d'),
-                            'category' => $r->category,
-                        ]), ENT_QUOTES, 'UTF-8') }}"
+                        data-id="{{ $r->id }}"
+                        data-receipt-no="{{ $r->receipt_no }}"
+                        data-account-id="{{ $r->account_id }}"
+                        data-account-no="{{ $r->account_no ?? '' }}"
+                        data-name="{{ $r->name }}"
+                        data-member-no="{{ $r->member_no }}"
+                        data-amount="{{ (float)$r->amount }}"
+                        data-payment-mode="{{ $r->payment_mode }}"
+                        data-bank-id="{{ $r->bank_account_id ?? '' }}"
+                        data-notes="{{ $r->notes ?? '' }}"
+                        data-date="{{ \Carbon\Carbon::parse($r->created_at)->format('Y-m-d') }}"
+                        data-category="{{ $r->category }}"
                         onclick="openEditDepositModal(this)"
                         title="Edit / Correct Wrong Entry">
                         <i class="bi bi-pencil-square"></i> Edit
@@ -4158,39 +4168,77 @@
     }
 
     function openEditMemberModal(m) {
+        let data = {};
         if (m instanceof HTMLElement) {
-            try {
-                const raw = m.getAttribute('data-member');
-                m = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            } catch(e) {
-                console.error('Failed to parse member data:', e);
-                return;
+            if (m.dataset.id) {
+                data = {
+                    id: m.dataset.id,
+                    member_no: m.dataset.memberNo || '',
+                    name: m.dataset.name || '',
+                    phone: m.dataset.phone || '',
+                    email: m.dataset.email || '',
+                    status: m.dataset.status || 'active',
+                    kyc_status: m.dataset.kycStatus || 'not_submitted',
+                    created_at: m.dataset.joiningDate || '',
+                    date_of_birth: m.dataset.dob || '',
+                    aadhaar_last4: m.dataset.aadhaar || '',
+                    pan_last4: m.dataset.pan || '',
+                    nominee_name: m.dataset.nominee || '',
+                    occupation: m.dataset.occupation || '',
+                    mcs_score: m.dataset.score || 500,
+                    address: m.dataset.address || ''
+                };
+            } else if (m.getAttribute('data-member')) {
+                try {
+                    let raw = m.getAttribute('data-member');
+                    raw = raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                    data = JSON.parse(raw);
+                } catch(e) {
+                    console.error('Failed to parse member data:', e);
+                }
             }
         } else if (typeof m === 'string') {
-            try { m = JSON.parse(m); } catch(e) {}
+            try {
+                let raw = m.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                data = JSON.parse(raw);
+            } catch(e) {}
+        } else if (typeof m === 'object' && m !== null) {
+            data = m;
         }
-        if (!m) return;
+
+        if (!data || !data.id) return;
         const modal = document.getElementById('editCustomerModal');
         if (!modal) return;
-        document.getElementById('editModalTitle').textContent = 'Edit Customer: ' + (m.member_no || '') + ' (' + (m.name || '') + ')';
-        document.getElementById('editMemberForm').action = '/admin/members/' + m.id + '/update';
-        document.getElementById('editMemberNo').value = m.member_no || '';
-        document.getElementById('editMemberName').value = m.name || '';
-        document.getElementById('editMemberPhone').value = m.phone || '';
-        document.getElementById('editMemberEmail').value = m.email || '';
-        document.getElementById('editMemberStatus').value = m.user_status || m.status || 'active';
-        document.getElementById('editMemberKycStatus').value = m.kyc_status || 'not_submitted';
-        document.getElementById('editMemberJoiningDate').value = m.created_at ? m.created_at.substring(0, 10) : '';
-        document.getElementById('editMemberDob').value = m.date_of_birth ? m.date_of_birth.substring(0, 10) : '';
-        document.getElementById('editMemberAadhaar').value = m.aadhaar_last4 || '';
-        document.getElementById('editMemberPan').value = m.pan_last4 || '';
-        document.getElementById('editMemberNominee').value = m.nominee_name || '';
-        document.getElementById('editMemberOccupation').value = m.occupation || '';
-        document.getElementById('editMemberScore').value = m.mcs_score || 500;
-        document.getElementById('editMemberAddress').value = m.address || '';
-        document.getElementById('editMemberMpin').value = '';
+        
+        const titleEl = document.getElementById('editModalTitle');
+        if (titleEl) titleEl.textContent = 'Edit Customer: ' + (data.member_no || '') + ' (' + (data.name || '') + ')';
+        
+        const formEl = document.getElementById('editMemberForm');
+        if (formEl) formEl.action = '/admin/members/' + data.id + '/update';
+        
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val !== undefined && val !== null ? val : '';
+        };
+
+        setVal('editMemberNo', data.member_no);
+        setVal('editMemberName', data.name);
+        setVal('editMemberPhone', data.phone);
+        setVal('editMemberEmail', data.email);
+        setVal('editMemberStatus', data.user_status || data.status || 'active');
+        setVal('editMemberKycStatus', data.kyc_status || 'not_submitted');
+        setVal('editMemberJoiningDate', data.created_at ? data.created_at.substring(0, 10) : '');
+        setVal('editMemberDob', data.date_of_birth ? data.date_of_birth.substring(0, 10) : '');
+        setVal('editMemberAadhaar', data.aadhaar_last4);
+        setVal('editMemberPan', data.pan_last4);
+        setVal('editMemberNominee', data.nominee_name);
+        setVal('editMemberOccupation', data.occupation);
+        setVal('editMemberScore', data.mcs_score || 500);
+        setVal('editMemberAddress', data.address);
+        setVal('editMemberMpin', '');
 
         modal.style.display = 'flex';
+        modal.style.zIndex = '99999';
     }
 
     function closeEditMemberModal() {
@@ -4911,18 +4959,47 @@
         }
 
         function openEditDepositModal(r) {
+            let data = {};
             if (r instanceof HTMLElement) {
-                try {
-                    const raw = r.getAttribute('data-tx');
-                    r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                } catch(e) {
-                    console.error('Failed to parse tx data:', e);
-                    return;
+                if (r.dataset.id) {
+                    data = {
+                        id: r.dataset.id,
+                        receipt_no: r.dataset.receiptNo || ('#' + r.dataset.id),
+                        account_id: r.dataset.accountId,
+                        account_no: r.dataset.accountNo || '',
+                        name: r.dataset.name || '',
+                        member_no: r.dataset.memberNo || '',
+                        amount: parseFloat(r.dataset.amount) || 0,
+                        payment_mode: r.dataset.paymentMode || 'cash',
+                        bank_account_id: r.dataset.bankId || '',
+                        notes: r.dataset.notes || '',
+                        date: r.dataset.date || new Date().toISOString().slice(0, 10),
+                        category: r.dataset.category || 'deposit'
+                    };
+                } else if (r.getAttribute('data-tx')) {
+                    try {
+                        let raw = r.getAttribute('data-tx');
+                        raw = raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                        data = JSON.parse(raw);
+                    } catch(e) {
+                        console.error('Failed to parse tx data:', e);
+                    }
                 }
             } else if (typeof r === 'string') {
-                try { r = JSON.parse(r); } catch(e) {}
+                try {
+                    let raw = r.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                    data = JSON.parse(raw);
+                } catch(e) {
+                    console.error('Failed to parse string r:', e);
+                }
+            } else if (typeof r === 'object' && r !== null) {
+                data = r;
             }
-            if (!r) return;
+
+            if (!data || !data.id) {
+                console.error('No valid transaction data found to edit:', r);
+                return;
+            }
 
             const modal = document.getElementById('editDepositModal');
             const form = document.getElementById('editDepositForm');
@@ -4931,10 +5008,10 @@
                 return;
             }
 
-            const isWithdrawal = (r.category || '').toLowerCase() === 'withdrawal';
+            const isWithdrawal = (data.category || '').toLowerCase() === 'withdrawal';
             form.dataset.isWithdrawal = isWithdrawal ? '1' : '0';
-            form.dataset.oldAmount = r.amount || 0;
-            form.action = isWithdrawal ? ('/admin/withdrawals/' + r.id + '/update') : ('/admin/deposits/' + r.id + '/update');
+            form.dataset.oldAmount = data.amount || 0;
+            form.action = isWithdrawal ? ('/admin/withdrawals/' + data.id + '/update') : ('/admin/deposits/' + data.id + '/update');
 
             const title = document.getElementById('editModalTitle');
             if (title) title.textContent = isWithdrawal ? 'Edit Wrong Entry / Correct Withdrawal' : 'Edit Wrong Entry / Correct Deposit';
@@ -4945,19 +5022,36 @@
             const dateLabel = document.getElementById('editModalDateLabel');
             if (dateLabel) dateLabel.innerHTML = '<i class="bi bi-calendar-event"></i> ' + (isWithdrawal ? 'Withdrawal Date' : 'Payment Date') + ' <span style="color:#dc2626">*</span>';
 
-            document.getElementById('editModalReceiptNo').textContent = r.receipt_no || ('#' + r.id);
-            document.getElementById('editModalMemberName').textContent = (r.name || 'Member') + (r.member_no ? ' (' + r.member_no + ')' : '');
-            document.getElementById('editModalCategory').textContent = (r.category || 'deposit').replace(/_/g, ' ');
-            document.getElementById('editModalAmount').value = parseFloat(r.amount).toFixed(2);
-            document.getElementById('editModalDate').value = r.date || new Date().toISOString().slice(0, 10);
-            document.getElementById('editModalMode').value = (r.payment_mode || 'cash').toLowerCase();
+            const receiptNoEl = document.getElementById('editModalReceiptNo');
+            if (receiptNoEl) receiptNoEl.textContent = data.receipt_no || ('#' + data.id);
+
+            const memberNameEl = document.getElementById('editModalMemberName');
+            if (memberNameEl) memberNameEl.textContent = (data.name || 'Member') + (data.member_no ? ' (' + data.member_no + ')' : '');
+
+            const catEl = document.getElementById('editModalCategory');
+            if (catEl) catEl.textContent = (data.category || 'deposit').replace(/_/g, ' ');
+
+            const amtInput = document.getElementById('editModalAmount');
+            if (amtInput) amtInput.value = (parseFloat(data.amount) || 0).toFixed(2);
+
+            const dateInput = document.getElementById('editModalDate');
+            if (dateInput) dateInput.value = data.date || new Date().toISOString().slice(0, 10);
+
+            const modeInput = document.getElementById('editModalMode');
+            if (modeInput) modeInput.value = (data.payment_mode || 'cash').toLowerCase();
+
             const bankSelect = document.getElementById('editModalBank');
-            if (bankSelect) bankSelect.value = r.bank_account_id || '';
-            document.getElementById('editModalNote').value = r.notes || '';
-            document.getElementById('editModalReason').value = '';
+            if (bankSelect) bankSelect.value = data.bank_account_id || '';
+
+            const noteInput = document.getElementById('editModalNote');
+            if (noteInput) noteInput.value = data.notes || '';
+
+            const reasonInput = document.getElementById('editModalReason');
+            if (reasonInput) reasonInput.value = '';
 
             calculateEditDiff();
             modal.style.display = 'flex';
+            modal.style.zIndex = '999999';
         }
 
         function openEditTransactionModal(r) {
