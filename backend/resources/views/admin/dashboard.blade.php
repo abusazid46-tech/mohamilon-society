@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -900,7 +900,7 @@
                 </div>
 
                 <!-- Editable Dates for Back-Date Entry -->
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 6px; padding: 12px 14px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;">
                     <div>
                         <label style="font-size: 11.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 4px; margin-bottom: 5px;">
                             <i class="bi bi-calendar-event"></i> Admission / Joining Date (Editable for back-date entry) <span style="color:#dc2626">*</span>
@@ -913,8 +913,68 @@
                         <label style="font-size: 11.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 4px; margin-bottom: 5px;">
                             <i class="bi bi-calendar-check"></i> Account Opening Date (Editable for back-date entry) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="account_opening_date" type="date" value="{{ date('Y-m-d') }}" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: #ffffff;">
+                        <input name="account_opening_date" id="customerCreateOpeningDate" type="date" value="{{ date('Y-m-d') }}" onchange="updateCreateAccountMaturity()" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: #ffffff;">
                         <span style="font-size: 10.5px; color: #15803d; margin-top: 3px; display: block;">Effective opening date for deposit scheme & ledger records</span>
+                    </div>
+                </div>
+
+                <!-- Customizable Deposit Tenure & Maturity Calculation -->
+                <div style="background: #f0fdfa; border: 1.5px solid #5eead4; border-radius: 8px; padding: 14px 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 12px; font-weight: 800; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px;">
+                            <i class="bi bi-hourglass-split"></i> Customizable Deposit Tenure & Maturity Setting
+                        </span>
+                        <span style="font-size: 11px; color: #0d9488; font-weight: 600;">Custom duration & auto-calculated maturity</span>
+                    </div>
+
+                    <!-- Quick Preset Buttons -->
+                    <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 12px; flex-wrap: wrap;">
+                        <span style="font-size: 11px; font-weight: 700; color: #134e4a; margin-right: 4px;">Quick Tenure:</span>
+                        <button type="button" onclick="setCreateAccountTenure(6, 'months', this)" class="tenure-pill-btn" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 999px; border: 1px solid #14b8a6; background: white; color: #0f766e; cursor: pointer;">6 Mo</button>
+                        <button type="button" onclick="setCreateAccountTenure(12, 'months', this)" class="tenure-pill-btn" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 999px; border: 1px solid #14b8a6; background: #0d9488; color: white; cursor: pointer;">1 Year (12 Mo)</button>
+                        <button type="button" onclick="setCreateAccountTenure(24, 'months', this)" class="tenure-pill-btn" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 999px; border: 1px solid #14b8a6; background: white; color: #0f766e; cursor: pointer;">2 Years (24 Mo)</button>
+                        <button type="button" onclick="setCreateAccountTenure(36, 'months', this)" class="tenure-pill-btn" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 999px; border: 1px solid #14b8a6; background: white; color: #0f766e; cursor: pointer;">3 Years (36 Mo)</button>
+                        <button type="button" onclick="setCreateAccountTenure(60, 'months', this)" class="tenure-pill-btn" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 999px; border: 1px solid #14b8a6; background: white; color: #0f766e; cursor: pointer;">5 Years (60 Mo)</button>
+                        <button type="button" onclick="setCreateAccountTenure(120, 'months', this)" class="tenure-pill-btn" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 999px; border: 1px solid #14b8a6; background: white; color: #0f766e; cursor: pointer;">10 Years (120 Mo)</button>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1.2fr 1fr 1.4fr; gap: 14px; align-items: flex-start;">
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #134e4a; display: block; margin-bottom: 5px;">
+                                Deposit Tenure Duration <span style="color:#dc2626">*</span>
+                            </label>
+                            <div style="display: flex; gap: 6px;">
+                                <input type="number" id="createAccountTenureValue" min="1" max="600" value="12" oninput="updateCreateAccountMaturity()" style="flex: 1; padding: 8px 10px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 13px; font-weight: 700; background: white;">
+                                <select id="createAccountTenureUnit" onchange="updateCreateAccountMaturity()" style="padding: 8px 8px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 12px; font-weight: 700; background: white; color: #0f766e;">
+                                    <option value="months" selected>Months</option>
+                                    <option value="years">Years</option>
+                                </select>
+                            </div>
+                            <input type="hidden" name="tenure_months" id="createAccountTenureMonths" value="12">
+                            <span style="font-size: 10.5px; color: #0f766e; margin-top: 3px; display: block;">Specify duration in months or years</span>
+                        </div>
+
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #134e4a; display: block; margin-bottom: 5px;">
+                                Custom Interest Rate (% p.a.)
+                            </label>
+                            <input name="custom_interest_rate" id="createAccountCustomRate" type="number" step=".01" min="0" max="30" placeholder="Default Plan Rate" oninput="updateCreateAccountMaturity()" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
+                            <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Leave blank for scheme rate</span>
+                        </div>
+
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #134e4a; display: block; margin-bottom: 5px;">
+                                Maturity Date (Editable / Auto)
+                            </label>
+                            <input name="maturity_date" id="createAccountMaturityDate" type="date" onchange="onManualMaturityChange()" style="width: 100%; padding: 8px 10px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 13px; font-weight: 700; background: white;">
+                            <span id="createAccountMaturityNote" style="font-size: 10.5px; color: #0f766e; margin-top: 3px; display: block;">Auto-calculated (can also set manually)</span>
+                        </div>
+                    </div>
+
+                    <!-- Live Summary Preview Badge -->
+                    <div id="createAccountTenurePreview" style="margin-top: 10px; padding: 8px 12px; background: #ccfbf1; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #115e59; font-weight: 600;">
+                        <span><i class="bi bi-calendar4-week"></i> Effective Term: <b id="tenurePreviewTerm">12 Months (1 Year)</b></span>
+                        <span><i class="bi bi-shield-check"></i> Maturity Date: <b id="tenurePreviewDate">--</b></span>
                     </div>
                 </div>
             </div>
@@ -1839,7 +1899,19 @@
                             @endforeach
                         </select>
                     </div>
-                    <div class="field"><label>Deposit Amount (&#8377;)</label><input name="amount" type="number" min="1" step=".01" required></div>
+                    <div class="row">
+                        <div class="field" style="flex: 1.2;">
+                            <label>Deposit Amount (&#8377;) <span style="color:#dc2626">*</span></label>
+                            <input name="amount" type="number" min="0.01" step=".01" required style="font-weight: 700; font-size: 14px;">
+                        </div>
+                        <div class="field" style="flex: 1;">
+                            <label style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-weight:700; color:#166534;"><i class="bi bi-calendar-event"></i> Payment Date</span>
+                                <span class="muted" style="font-size:10px; color:#15803d;">(Back-date editable)</span>
+                            </label>
+                            <input name="deposit_date" type="date" value="{{ date('Y-m-d') }}" style="border: 1.5px solid #22c55e; font-weight: 700; background: #ffffff;">
+                        </div>
+                    </div>
                     <div class="row">
                         <div class="field"><label>Payment Mode</label><select name="payment_mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option></select></div>
                         <div class="field"><label>Bank Account</label><select name="bank_account_id"><option value="">Default Treasury</option>@foreach($bankAccounts as $b)<option value="{{$b->id}}">{{$b->bank_name}} (&#8377;{{number_format($b->current_balance,2)}})</option>@endforeach</select></div>
@@ -1865,7 +1937,19 @@
                             <option value="{{$acc->id}}" data-member-id="{{$acc->member_id}}" data-balance="{{$acc->balance}}">{{$acc->account_no}} — {{$acc->name}} (Available: &#8377;{{number_format($acc->balance,2)}})</option>
                         @endforeach
                     </select></div>
-                    <div class="field"><label>Withdrawal Amount (&#8377;) (Step 3)</label><input name="amount" id="withdrawal-amount" type="number" min="1" step=".01" oninput="validateWithdrawal()" required></div>
+                    <div class="row">
+                        <div class="field" style="flex: 1.2;">
+                            <label>Withdrawal Amount (&#8377;) (Step 3) <span style="color:#dc2626">*</span></label>
+                            <input name="amount" id="withdrawal-amount" type="number" min="0.01" step=".01" oninput="validateWithdrawal()" required style="font-weight: 700; font-size: 14px;">
+                        </div>
+                        <div class="field" style="flex: 1;">
+                            <label style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-weight:700; color:#b91c1c;"><i class="bi bi-calendar-event"></i> Withdrawal Date</span>
+                                <span class="muted" style="font-size:10px; color:#dc2626;">(Back-date editable)</span>
+                            </label>
+                            <input name="withdrawal_date" id="withdrawal-date" type="date" value="{{ date('Y-m-d') }}" style="border: 1.5px solid #ef4444; font-weight: 700; background: #ffffff;">
+                        </div>
+                    </div>
                     <div id="withdrawal-balance-msg" style="font-size:12px;margin:2px 0 6px;display:none"></div>
                     <div class="row">
                         <div class="field"><label>Payment Mode (Step 4)</label><select name="payment_mode"><option value="cash">Cash</option><option value="bank">Bank</option><option value="upi">UPI</option></select></div>
@@ -2024,6 +2108,26 @@
                             <td>{{ \Carbon\Carbon::parse($r->created_at)->format('d M Y, h:i A') }}</td>
                             <td style="text-align: center; white-space: nowrap;">
                                 <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                    @if($can('deposit.create') || $can('withdrawal.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager','secretary'], true))
+                                    <button type="button" class="button" style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: #0f172a; display: inline-flex; align-items: center; gap: 3px; border: none; font-weight: 700; cursor: pointer; border-radius: 4px;"
+                                        onclick="openEditDepositModal({{ json_encode([
+                                            'id' => $r->id,
+                                            'receipt_no' => $r->receipt_no,
+                                            'account_id' => $r->account_id,
+                                            'account_no' => $r->account_no ?? '',
+                                            'name' => $r->name,
+                                            'member_no' => $r->member_no,
+                                            'amount' => (float)$r->amount,
+                                            'payment_mode' => $r->payment_mode,
+                                            'bank_account_id' => $r->bank_account_id ?? null,
+                                            'notes' => $r->notes,
+                                            'date' => \Carbon\Carbon::parse($r->created_at)->format('Y-m-d'),
+                                            'category' => $r->category,
+                                        ]) }})"
+                                        title="Edit / Correct Wrong Entry">
+                                        <i class="bi bi-pencil-square"></i> Edit
+                                    </button>
+                                    @endif
                                     <a class="button" style="padding: 3px 8px; font-size: 11px; background: #0284c7; color: white; display: inline-flex; align-items: center; gap: 3px; text-decoration: none;" href="/admin/receipts/{{ $r->id }}/view" target="_blank" title="Print Official Receipt">
                                         <i class="bi bi-printer"></i> Print
                                     </a>
@@ -2213,6 +2317,8 @@
                 <div class="field"><label>Opening amount</label><input name="opening_deposit" value="{{old('opening_deposit')}}" type="number" min="1" step=".01" required></div>
                 <div class="field"><label>Shares (&#8377;500/month each)</label><input name="share_count" type="number" value="{{old('share_count',1)}}" min="1" max="100"></div>
                 <div class="field"><label>Custom interest % (optional)</label><input name="custom_interest_rate" value="{{old('custom_interest_rate')}}" type="number" step=".001" min="0" max="30" placeholder="Blank = plan rate"></div>
+                <div class="field"><label>Deposit Tenure (Months)</label><input name="tenure_months" type="number" min="1" max="600" value="{{old('tenure_months', 12)}}" placeholder="e.g. 12, 24, 36, 60"></div>
+                <div class="field"><label>Maturity Date (optional)</label><input name="maturity_date" type="date" value="{{old('maturity_date')}}"></div>
                 <button id="admin-account-submit" data-existing-label="{{$can('account.approve')?'Create account & request payment':'Submit for approval'}}" data-new-label="Create applicant & account request">{{$defaultMemberSource==='new'?'Create applicant & account request':($can('account.approve')?'Create account & request payment':'Submit for approval')}}</button>
             </div>
         </form>
@@ -2307,9 +2413,31 @@
             <td>{{strtoupper($r->payment_mode)}}</td>
             <td>{{\Carbon\Carbon::parse($r->created_at)->format('d M Y, h:i A')}}</td>
             <td>
-                <a class="button secondary" style="padding:4px 8px;font-size:11px" href="/admin/receipts/{{$r->id}}/view" target="_blank">View / Print</a>
-                <a class="button secondary" style="padding:4px 8px;font-size:11px" href="/admin/receipts/{{$r->id}}/download">Download</a>
-                <a class="button" style="padding:4px 8px;font-size:11px;background:#25D366" href="https://wa.me/?text={{$waMsg}}" target="_blank">WhatsApp</a>
+                <div style="display:inline-flex;align-items:center;gap:4px;">
+                    @if($can('deposit.create') || $can('withdrawal.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager','secretary'], true))
+                    <button type="button" class="button" style="padding:4px 8px;font-size:11px;background:#f59e0b;color:#0f172a;font-weight:700;border:none;border-radius:4px;cursor:pointer;"
+                        onclick="openEditDepositModal({{ json_encode([
+                            'id' => $r->id,
+                            'receipt_no' => $r->receipt_no,
+                            'account_id' => $r->account_id,
+                            'account_no' => $r->account_no ?? '',
+                            'name' => $r->name,
+                            'member_no' => $r->member_no,
+                            'amount' => (float)$r->amount,
+                            'payment_mode' => $r->payment_mode,
+                            'bank_account_id' => $r->bank_account_id ?? null,
+                            'notes' => $r->notes,
+                            'date' => \Carbon\Carbon::parse($r->created_at)->format('Y-m-d'),
+                            'category' => $r->category,
+                        ]) }})"
+                        title="Edit / Correct Wrong Entry">
+                        <i class="bi bi-pencil-square"></i> Edit
+                    </button>
+                    @endif
+                    <a class="button secondary" style="padding:4px 8px;font-size:11px" href="/admin/receipts/{{$r->id}}/view" target="_blank">View / Print</a>
+                    <a class="button secondary" style="padding:4px 8px;font-size:11px" href="/admin/receipts/{{$r->id}}/download">Download</a>
+                    <a class="button" style="padding:4px 8px;font-size:11px;background:#25D366" href="https://wa.me/?text={{$waMsg}}" target="_blank">WhatsApp</a>
+                </div>
             </td>
         </tr>
         @empty<tr><td colspan="7">No receipts issued yet.</td></tr>@endforelse
@@ -3246,7 +3374,7 @@
                         Requested: <b>&#8377;{{number_format($l->amount,2)}}</b><br>
                         @if($l->sanctioned_amount)
                             Sanctioned: <b style="color:var(--green)">&#8377;{{number_format($l->sanctioned_amount,2)}}</b><br>
-                            Rate: {{number_format($l->annual_interest_rate ?: AppServicesLoanSchedule::defaultRate($l->loan_type), 2)}}% p.a.
+                            Rate: {{number_format($l->annual_interest_rate ?: \App\Services\LoanSchedule::defaultRate($l->loan_type), 2)}}% p.a.
                         @endif
                         @if($l->outstanding_principal !== null)
                             <br><small class="muted">Bal: &#8377;{{number_format($l->outstanding_principal,2)}}</small>
@@ -3306,7 +3434,7 @@
                                 <input type="hidden" name="decision" value="approved">
                                 <div style="display:flex;gap:4px">
                                     <input name="sanctioned_amount" type="number" value="{{$l->amount}}" style="width:100px;font-size:11px;padding:4px" title="Sanctioned Amount" placeholder="Amount" required>
-                                    <input name="annual_interest_rate" type="number" step=".001" value="{{AppServicesLoanSchedule::defaultRate($l->loan_type)}}" style="width:65px;font-size:11px;padding:4px" title="Rate %" placeholder="Rate %" required>
+                                    <input name="annual_interest_rate" type="number" step=".001" value="{{\App\Services\LoanSchedule::defaultRate($l->loan_type)}}" style="width:65px;font-size:11px;padding:4px" title="Rate %" placeholder="Rate %" required>
                                 </div>
                                 <button class="button success" style="padding:5px 8px;font-size:11px">Approve Loan</button>
                             </form>
@@ -4563,10 +4691,296 @@
                 </div>
             </div>
 
-            <div style="padding: 12px 20px; border-top: 1px solid #e2e8f0; background: #f8fafc; display: flex; justify-content: flex-end; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px;">
-                <button type="button" onclick="closeRdScheduleModal()" class="button secondary" style="padding: 6px 16px;">Close</button>
+    <!-- ================= EDIT DEPOSIT / WRONG ENTRY CORRECTION MODAL ================= -->
+    <div id="editDepositModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); z-index: 99999; justify-content: center; align-items: center; padding: 20px;">
+        <div style="background: white; border-radius: 12px; width: 100%; max-width: 520px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); overflow: hidden;">
+            <div style="background: linear-gradient(135deg, #f59e0b, #d97706); padding: 16px 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="bi bi-pencil-square" style="font-size: 20px;"></i>
+                    <h3 id="editModalTitle" style="margin: 0; font-size: 16px; font-weight: 800; color: white;">Edit Wrong Entry / Correct Transaction</h3>
+                </div>
+                <button type="button" onclick="closeEditDepositModal()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; line-height: 1;">&times;</button>
             </div>
+
+            <form id="editDepositForm" method="post" action="" style="padding: 20px; margin: 0;">
+                @csrf
+                <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: #92400e; line-height: 1.5;">
+                    <i class="bi bi-exclamation-triangle-fill" style="margin-right: 4px;"></i>
+                    Modifying this entry will adjust the account balance, ledger entry, cash book/bank statement, and official receipt records accordingly with an audit trail.
+                </div>
+
+                <!-- Receipt Info Header -->
+                <div style="display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px;">
+                    <div>
+                        <span class="muted" style="font-size: 11px; display: block;">Receipt No:</span>
+                        <b id="editModalReceiptNo" style="color: #0369a1;">--</b>
+                    </div>
+                    <div>
+                        <span class="muted" style="font-size: 11px; display: block;">Member:</span>
+                        <b id="editModalMemberName">--</b>
+                    </div>
+                    <div>
+                        <span class="muted" style="font-size: 11px; display: block;">Category:</span>
+                        <span id="editModalCategory" class="badge">--</span>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+                    <div>
+                        <label id="editModalAmountLabel" style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
+                            Amount (&#8377;) <span style="color:#dc2626">*</span>
+                        </label>
+                        <input type="number" name="amount" id="editModalAmount" step="0.01" min="0.01" required oninput="calculateEditDiff()" style="width: 100%; padding: 8px 12px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-size: 14px; font-weight: 700; box-sizing: border-box;">
+                        <div id="editModalDiffBadge" style="font-size: 11px; margin-top: 3px; font-weight: 600;"></div>
+                    </div>
+
+                    <div>
+                        <label id="editModalDateLabel" style="font-size: 12px; font-weight: 700; color: #166534; display: block; margin-bottom: 4px;">
+                            <i class="bi bi-calendar-event"></i> Entry Date <span style="color:#dc2626">*</span>
+                        </label>
+                        <input type="date" name="deposit_date" id="editModalDate" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; box-sizing: border-box;">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
+                            Payment Mode <span style="color:#dc2626">*</span>
+                        </label>
+                        <select name="payment_mode" id="editModalMode" required style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+                            <option value="cash">Cash</option>
+                            <option value="bank">Bank</option>
+                            <option value="upi">UPI</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
+                            Bank Account (if Bank/UPI)
+                        </label>
+                        <select name="bank_account_id" id="editModalBank" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+                            <option value="">Default Treasury</option>
+                            @foreach($bankAccounts as $b)
+                                <option value="{{ $b->id }}">{{ $b->bank_name }} (&#8377;{{ number_format($b->current_balance, 2) }})</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 14px;">
+                    <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 4px;">
+                        Note / Description
+                    </label>
+                    <input type="text" name="note" id="editModalNote" placeholder="e.g. Daily deposit / Monthly collection" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+                </div>
+
+                <div style="margin-bottom: 18px;">
+                    <label style="font-size: 12px; font-weight: 700; color: #991b1b; display: block; margin-bottom: 4px;">
+                        Reason for Correction / Details <span style="color:#dc2626">*</span>
+                    </label>
+                    <input type="text" name="correction_reason" id="editModalReason" required placeholder="e.g. Operator entered wrong amount / typo in deposit amount" style="width: 100%; padding: 8px 12px; border: 1.5px solid #f87171; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
+                    <span class="muted" style="font-size: 11px;">Documented in the official audit trail for regulatory compliance.</span>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 14px;">
+                    <button type="button" onclick="closeEditDepositModal()" class="button secondary" style="padding: 8px 16px; font-size: 13px;">Cancel</button>
+                    <button type="submit" class="button" style="padding: 8px 20px; font-size: 13px; background: #f59e0b; color: #0f172a; font-weight: 800; border: none; border-radius: 6px; cursor: pointer;">
+                        <i class="bi bi-check2-circle"></i> Save Correction & Adjust Ledgers
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
+    <!-- Scripts for Customizable Deposit Tenure and Wrong Entry Correction -->
+    <script>
+        function setCreateAccountTenure(val, unit, btn) {
+            const valInput = document.getElementById('createAccountTenureValue');
+            const unitSelect = document.getElementById('createAccountTenureUnit');
+            if (valInput) valInput.value = val;
+            if (unitSelect) unitSelect.value = unit;
+
+            // Highlight selected button
+            document.querySelectorAll('.tenure-pill-btn').forEach(b => {
+                b.style.background = 'white';
+                b.style.color = '#0f766e';
+            });
+            if (btn) {
+                btn.style.background = '#0d9488';
+                btn.style.color = 'white';
+            }
+            updateCreateAccountMaturity();
+        }
+
+        function updateCreateAccountMaturity() {
+            const valInput = document.getElementById('createAccountTenureValue');
+            const unitSelect = document.getElementById('createAccountTenureUnit');
+            const hiddenMonths = document.getElementById('createAccountTenureMonths');
+            const openingInput = document.getElementById('customerCreateOpeningDate');
+            const maturityInput = document.getElementById('createAccountMaturityDate');
+            const termPreview = document.getElementById('tenurePreviewTerm');
+            const datePreview = document.getElementById('tenurePreviewDate');
+            const noteSpan = document.getElementById('createAccountMaturityNote');
+
+            if (!valInput || !unitSelect) return;
+
+            let val = parseInt(valInput.value, 10);
+            if (isNaN(val) || val < 1) val = 1;
+            const unit = unitSelect.value;
+            const totalMonths = unit === 'years' ? val * 12 : val;
+
+            if (hiddenMonths) hiddenMonths.value = totalMonths;
+
+            const openingStr = openingInput && openingInput.value ? openingInput.value : new Date().toISOString().slice(0, 10);
+            const parts = openingStr.split('-');
+            const year = parseInt(parts[0], 10);
+            const month = parseInt(parts[1], 10) - 1;
+            const day = parseInt(parts[2], 10);
+
+            // Add months to date
+            const targetYear = year + Math.floor((month + totalMonths) / 12);
+            const targetMonth = (month + totalMonths) % 12;
+            const maxDaysInTarget = new Date(targetYear, targetMonth + 1, 0).getDate();
+            const targetDay = Math.min(day, maxDaysInTarget);
+
+            const pad = n => String(n).padStart(2, '0');
+            const maturityStr = targetYear + '-' + pad(targetMonth + 1) + '-' + pad(targetDay);
+
+            if (maturityInput) maturityInput.value = maturityStr;
+
+            const yearsDec = (totalMonths / 12).toFixed(1).replace('.0', '');
+            const termLabel = totalMonths + ' Month' + (totalMonths > 1 ? 's' : '') + (totalMonths >= 12 ? ' (' + yearsDec + ' Year' + (yearsDec != 1 ? 's' : '') + ')' : '');
+
+            if (termPreview) termPreview.textContent = termLabel;
+            if (datePreview) datePreview.textContent = maturityStr;
+            if (noteSpan) noteSpan.textContent = 'Auto-calculated: ' + termLabel + ' from opening date';
+        }
+
+        function onManualMaturityChange() {
+            const openingInput = document.getElementById('customerCreateOpeningDate');
+            const maturityInput = document.getElementById('createAccountMaturityDate');
+            const valInput = document.getElementById('createAccountTenureValue');
+            const unitSelect = document.getElementById('createAccountTenureUnit');
+            const hiddenMonths = document.getElementById('createAccountTenureMonths');
+            const termPreview = document.getElementById('tenurePreviewTerm');
+            const datePreview = document.getElementById('tenurePreviewDate');
+            const noteSpan = document.getElementById('createAccountMaturityNote');
+
+            if (!openingInput || !maturityInput || !maturityInput.value) return;
+
+            const d1 = new Date(openingInput.value || new Date());
+            const d2 = new Date(maturityInput.value);
+
+            let diffMonths = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+            if (d2.getDate() < d1.getDate()) diffMonths -= 1;
+            if (diffMonths < 1) diffMonths = 1;
+
+            if (hiddenMonths) hiddenMonths.value = diffMonths;
+            if (valInput) valInput.value = diffMonths;
+            if (unitSelect) unitSelect.value = 'months';
+
+            document.querySelectorAll('.tenure-pill-btn').forEach(b => {
+                b.style.background = 'white';
+                b.style.color = '#0f766e';
+            });
+
+            const yearsDec = (diffMonths / 12).toFixed(1).replace('.0', '');
+            const termLabel = diffMonths + ' Months (' + yearsDec + ' Yrs)';
+            if (termPreview) termPreview.textContent = termLabel;
+            if (datePreview) datePreview.textContent = maturityInput.value;
+            if (noteSpan) noteSpan.textContent = 'Custom date set manually (~' + diffMonths + ' months)';
+        }
+
+        function openEditDepositModal(r) {
+            const modal = document.getElementById('editDepositModal');
+            const form = document.getElementById('editDepositForm');
+            if (!modal || !form) return;
+
+            const isWithdrawal = (r.category || '').toLowerCase() === 'withdrawal';
+            form.dataset.isWithdrawal = isWithdrawal ? '1' : '0';
+            form.dataset.oldAmount = r.amount || 0;
+            form.action = isWithdrawal ? ('/admin/withdrawals/' + r.id + '/update') : ('/admin/deposits/' + r.id + '/update');
+
+            const title = document.getElementById('editModalTitle');
+            if (title) title.textContent = isWithdrawal ? 'Edit Wrong Entry / Correct Withdrawal' : 'Edit Wrong Entry / Correct Deposit';
+
+            const amtLabel = document.getElementById('editModalAmountLabel');
+            if (amtLabel) amtLabel.innerHTML = (isWithdrawal ? 'Withdrawal Amount (&#8377;)' : 'Deposit Amount (&#8377;)') + ' <span style="color:#dc2626">*</span>';
+
+            const dateLabel = document.getElementById('editModalDateLabel');
+            if (dateLabel) dateLabel.innerHTML = '<i class="bi bi-calendar-event"></i> ' + (isWithdrawal ? 'Withdrawal Date' : 'Payment Date') + ' <span style="color:#dc2626">*</span>';
+
+            document.getElementById('editModalReceiptNo').textContent = r.receipt_no || ('#' + r.id);
+            document.getElementById('editModalMemberName').textContent = (r.name || 'Member') + (r.member_no ? ' (' + r.member_no + ')' : '');
+            document.getElementById('editModalCategory').textContent = (r.category || 'deposit').replace(/_/g, ' ');
+            document.getElementById('editModalAmount').value = parseFloat(r.amount).toFixed(2);
+            document.getElementById('editModalDate').value = r.date || new Date().toISOString().slice(0, 10);
+            document.getElementById('editModalMode').value = (r.payment_mode || 'cash').toLowerCase();
+            const bankSelect = document.getElementById('editModalBank');
+            if (bankSelect) bankSelect.value = r.bank_account_id || '';
+            document.getElementById('editModalNote').value = r.notes || '';
+            document.getElementById('editModalReason').value = '';
+
+            calculateEditDiff();
+            modal.style.display = 'flex';
+        }
+
+        function openEditTransactionModal(r) {
+            openEditDepositModal(r);
+        }
+
+        function closeEditDepositModal() {
+            const modal = document.getElementById('editDepositModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function calculateEditDiff() {
+            const form = document.getElementById('editDepositForm');
+            const amtInput = document.getElementById('editModalAmount');
+            const badge = document.getElementById('editModalDiffBadge');
+            if (!form || !amtInput || !badge) return;
+
+            const oldAmt = parseFloat(form.dataset.oldAmount) || 0;
+            const newAmt = parseFloat(amtInput.value) || 0;
+            const isWithdrawal = form.dataset.isWithdrawal === '1';
+
+            if (isWithdrawal) {
+                if (newAmt > oldAmt + 0.001) {
+                    const extra = newAmt - oldAmt;
+                    badge.innerHTML = '<span style="color:#dc2626;"><i class="bi bi-arrow-down-circle-fill"></i> Higher withdrawal (+&#8377;' + extra.toFixed(2) + '): will debit an extra &#8377;' + extra.toFixed(2) + ' from account balance</span>';
+                } else if (newAmt < oldAmt - 0.001) {
+                    const refund = oldAmt - newAmt;
+                    badge.innerHTML = '<span style="color:#16a34a;"><i class="bi bi-arrow-up-circle-fill"></i> Reduced withdrawal (-&#8377;' + refund.toFixed(2) + '): will restore &#8377;' + refund.toFixed(2) + ' back to account balance</span>';
+                } else {
+                    badge.innerHTML = '<span style="color:#64748b;">No change in withdrawal amount</span>';
+                }
+            } else {
+                const diff = newAmt - oldAmt;
+                if (diff > 0.001) {
+                    badge.innerHTML = '<span style="color:#16a34a;"><i class="bi bi-arrow-up-circle-fill"></i> +&#8377;' + diff.toFixed(2) + ' (Will credit account balance)</span>';
+                } else if (diff < -0.001) {
+                    badge.innerHTML = '<span style="color:#dc2626;"><i class="bi bi-arrow-down-circle-fill"></i> -&#8377;' + Math.abs(diff).toFixed(2) + ' (Will debit account balance)</span>';
+                } else {
+                    badge.innerHTML = '<span style="color:#64748b;">No change in deposit amount</span>';
+                }
+            }
+        }
+
+        // Close on ESC key or outside click
+        window.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeEditDepositModal();
+            }
+        });
+
+        document.getElementById('editDepositModal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeEditDepositModal();
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', function() {
+            updateCreateAccountMaturity();
+        });
+    </script>
 </body></html>

@@ -20,7 +20,10 @@ Route::middleware('auth')->prefix('admin')->group(function(){
  Route::post('/loan-installments/{id}/fine',[AdminController::class,'applyInstallmentFine']);
  Route::post('/loan-installments/{id}/remind',[AdminController::class,'sendEmiReminderNotification']);
  Route::post('/deposits',[AdminController::class,'recordDeposit']);
+ Route::post('/deposits/{id}/update',[AdminController::class,'updateDeposit']);
  Route::post('/withdrawals',[AdminController::class,'recordWithdrawal']);
+ Route::post('/withdrawals/{id}/update',[AdminController::class,'updateTransaction']);
+ Route::post('/transactions/{id}/update',[AdminController::class,'updateTransaction']);
  Route::post('/fd',[AdminController::class,'createFd']);
  Route::post('/rd',[AdminController::class,'createRd']);
  Route::post('/rd-installments/{id}/pay',[AdminController::class,'payRdInstallment']);

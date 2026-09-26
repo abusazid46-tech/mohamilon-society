@@ -304,7 +304,8 @@ class AdminController extends Controller
             'bankAccounts' => DB::table('bank_accounts')->orderBy('bank_name')->get(),
             'receipts' => DB::table('receipts')->join('members','members.id','=','receipts.member_id')
                 ->join('users','users.id','=','members.user_id')
-                ->select('receipts.*','users.name','members.member_no')->latest('receipts.id')->limit(100)->get(),
+                ->leftJoin('accounts','accounts.id','=','receipts.account_id')
+                ->select('receipts.*','users.name','members.member_no','accounts.account_no')->latest('receipts.id')->limit(100)->get(),
             'rdInstallments' => DB::table('rd_installments')->join('accounts','accounts.id','=','rd_installments.account_id')
                 ->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
                 ->select('rd_installments.*','accounts.account_no','users.name')
@@ -412,6 +413,8 @@ class AdminController extends Controller
             'scheme_id' => 'required|exists:schemes,id',
             'opening_deposit' => 'required|numeric|min:1', 'share_count' => 'nullable|integer|min:1|max:100',
             'custom_interest_rate' => 'nullable|numeric|min:0|max:30',
+            'tenure_months' => 'nullable|integer|min:1|max:600',
+            'maturity_date' => 'nullable|date',
         ]);
         $isNewApplicant = $data['member_source'] === 'new';
         $member = null;
@@ -436,6 +439,34 @@ class AdminController extends Controller
             $memberNo = $member?->member_no;
             $joiningDate = !empty($data['date_of_joining']) ? Carbon::parse($data['date_of_joining']) : now();
             $accountOpeningDate = !empty($data['account_opening_date']) ? Carbon::parse($data['account_opening_date']) : $joiningDate;
+
+            // Determine deposit tenure and maturity date
+            $tenureMonths = !empty($data['tenure_months']) ? (int) $data['tenure_months'] : ($scheme->term_months ? (int) $scheme->term_months : null);
+            $maturesOn = null;
+            if (!empty($data['maturity_date'])) {
+                $maturesOn = Carbon::parse($data['maturity_date'])->toDateString();
+            } elseif ($tenureMonths) {
+                $maturesOn = $accountOpeningDate->copy()->addMonthsNoOverflow($tenureMonths)->toDateString();
+            }
+
+            // Calculate estimated maturity amount if tenure and rate are present
+            $rate = isset($data['custom_interest_rate']) && $data['custom_interest_rate'] !== null && $data['custom_interest_rate'] !== ''
+                ? (float) $data['custom_interest_rate']
+                : (float) $scheme->annual_rate;
+            $maturityAmount = null;
+            if ($tenureMonths && $rate > 0) {
+                if ($scheme->type === 'fd') {
+                    $calc = DepositCalculator::calculateFd((float)$data['opening_deposit'], $rate, $tenureMonths, $accountOpeningDate->toDateString());
+                    $maturityAmount = $calc['maturity_amount'];
+                } elseif ($scheme->type === 'rd') {
+                    $totalPrincipal = (float)$data['opening_deposit'] * $tenureMonths;
+                    $profit = round((float)$data['opening_deposit'] * (($tenureMonths * ($tenureMonths + 1)) / 24) * ($rate / 100), 2);
+                    $maturityAmount = round($totalPrincipal + $profit, 2);
+                } else {
+                    $t = $tenureMonths / 12;
+                    $maturityAmount = round((float)$data['opening_deposit'] * pow(1 + ($rate / 100), $t), 2);
+                }
+            }
 
             if ($isNewApplicant) {
                 $user = User::create([
@@ -469,8 +500,10 @@ class AdminController extends Controller
                 'account_no' => $accountNo, 'member_id' => $memberId, 'scheme_id' => $data['scheme_id'],
                 'share_count' => $shares, 'monthly_commitment' => in_array($scheme->code, ['SAVINGS','RD-MONTHLY'], true) ? 500 * $shares : 0,
                 'principal' => $data['opening_deposit'], 'balance' => 0, 'custom_interest_rate' => $data['custom_interest_rate'] ?? null,
+                'maturity_amount' => $maturityAmount,
                 'status' => 'pending', 'onboarding_status' => 'awaiting_review',
                 'opened_on' => $accountOpeningDate->toDateString(),
+                'matures_on' => $maturesOn,
                 'created_at' => $accountOpeningDate, 'updated_at' => $accountOpeningDate,
             ]);
             $account = DB::table('accounts')->where('id', $id)->firstOrFail();
@@ -481,6 +514,7 @@ class AdminController extends Controller
                 'account_no' => $accountNo, 'member_id' => $memberId, 'member_no' => $memberNo,
                 'scheme_id' => $data['scheme_id'], 'opening_deposit' => $data['opening_deposit'],
                 'share_count' => $shares, 'custom_interest_rate' => $data['custom_interest_rate'] ?? null,
+                'tenure_months' => $tenureMonths, 'matures_on' => $maturesOn, 'maturity_amount' => $maturityAmount,
                 'onboarding_status' => $canApprove ? 'payment_required' : 'awaiting_review',
             ]);
         });
@@ -1530,7 +1564,8 @@ class AdminController extends Controller
         $this->permit($request, 'deposit.create');
         $data = $request->validate([
             'account_id' => 'required|exists:accounts,id',
-            'amount' => 'required|numeric|min:1',
+            'amount' => 'required|numeric|min:0.01',
+            'deposit_date' => 'nullable|date',
             'payment_mode' => 'required|in:cash,bank,upi',
             'bank_account_id' => 'nullable|exists:bank_accounts,id',
             'note' => 'nullable|string|max:255',
@@ -1541,10 +1576,194 @@ class AdminController extends Controller
             $data['payment_mode'],
             isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
             $data['note'] ?? null,
-            $request->user()->id
+            $request->user()->id,
+            $data['deposit_date'] ?? null
         );
         $this->audit($request, 'deposit.recorded', 'account', $data['account_id'], null, $result);
         return back()->with('ok', "Deposit of ₹" . number_format($data['amount'], 2) . " recorded. Receipt No: {$result['receipt_no']}");
+    }
+
+    public function updateTransaction(Request $request, int $id)
+    {
+        $this->staff($request);
+        abort_unless(
+            StaffPermissions::allows($request->user(), 'deposit.create') ||
+            StaffPermissions::allows($request->user(), 'withdrawal.create') ||
+            in_array($request->user()->role, ['super_admin','president','manager','secretary'], true),
+            403,
+            'This action is not assigned to your staff account.'
+        );
+
+        $data = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'deposit_date' => 'nullable|date',
+            'transaction_date' => 'nullable|date',
+            'withdrawal_date' => 'nullable|date',
+            'payment_mode' => 'required|in:cash,bank,upi',
+            'bank_account_id' => 'nullable|exists:bank_accounts,id',
+            'note' => 'nullable|string|max:255',
+            'correction_reason' => 'nullable|string|max:255',
+        ]);
+
+        $receipt = DB::table('receipts')->where('id', $id)->first();
+        abort_unless($receipt, 404, 'Receipt / Transaction entry not found.');
+
+        // Verify account exists
+        $account = DB::table('accounts')->where('id', $receipt->account_id)->lockForUpdate()->first();
+        abort_unless($account, 404, 'Linked account not found.');
+
+        $entryDateStr = $data['transaction_date'] 
+            ?? $data['deposit_date'] 
+            ?? $data['withdrawal_date'] 
+            ?? Carbon::parse($receipt->created_at)->toDateString();
+
+        $isWithdrawal = $receipt->category === 'withdrawal';
+        $oldAmount = (float) $receipt->amount;
+        $newAmount = (float) $data['amount'];
+
+        // Balance adjustment:
+        // For Deposit: increased deposit adds to balance (+), reduced deposit deducts from balance (-)
+        // For Withdrawal: increased withdrawal deducts from balance (-), reduced withdrawal restores balance (+)
+        $diff = $isWithdrawal ? ($oldAmount - $newAmount) : ($newAmount - $oldAmount);
+
+        // Verify balance doesn't drop below zero
+        if ($diff < 0 && ((float) $account->balance + $diff) < 0) {
+            $actionVerb = $isWithdrawal ? 'increase withdrawal' : 'reduce deposit';
+            return back()->with('error', "Cannot {$actionVerb} by ₹" . number_format(abs($diff), 2) . ". Account balance would become negative (current balance: ₹" . number_format($account->balance, 2) . ").");
+        }
+
+        $beforeState = [
+            'type' => $receipt->category,
+            'amount' => $receipt->amount,
+            'payment_mode' => $receipt->payment_mode,
+            'date' => $receipt->created_at,
+            'notes' => $receipt->notes,
+            'account_balance' => $account->balance,
+        ];
+
+        DB::transaction(function () use ($request, $receipt, $account, $data, $oldAmount, $newAmount, $diff, $isWithdrawal, $entryDateStr) {
+            $newDate = Carbon::parse($entryDateStr);
+
+            // 1. Adjust Account Balance
+            if ($diff != 0) {
+                DB::table('accounts')->where('id', $account->id)->increment('balance', $diff, ['updated_at' => now()]);
+            }
+
+            // 2. Update Member Ledger Entry
+            $direction = $isWithdrawal ? 'debit' : 'credit';
+            if ($receipt->transaction_reference) {
+                $ledger = DB::table('ledger_entries')->where('reference', $receipt->transaction_reference)->first();
+                if ($ledger) {
+                    DB::table('ledger_entries')->where('id', $ledger->id)->update([
+                        'amount' => $newAmount,
+                        'description' => $data['note'] ?: ($isWithdrawal ? "Withdrawal: {$account->account_no}" : $ledger->description),
+                        'posted_at' => $newDate,
+                        'created_at' => $newDate,
+                        'updated_at' => now(),
+                    ]);
+                }
+            } else {
+                $ledger = DB::table('ledger_entries')
+                    ->where('account_id', $account->id)
+                    ->where('direction', $direction)
+                    ->where('amount', $oldAmount)
+                    ->whereDate('posted_at', Carbon::parse($receipt->created_at)->toDateString())
+                    ->first();
+                if ($ledger) {
+                    DB::table('ledger_entries')->where('id', $ledger->id)->update([
+                        'amount' => $newAmount,
+                        'description' => $data['note'] ?: $ledger->description,
+                        'posted_at' => $newDate,
+                        'created_at' => $newDate,
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            // 3. Update or adjust Cash / Bank ledger
+            $newLocation = in_array($data['payment_mode'], ['bank', 'upi'], true) ? 'bank' : 'treasury';
+
+            // Find matching cash ledger entry if any
+            $cle = null;
+            if ($receipt->transaction_reference) {
+                $cle = DB::table('cash_ledger_entries')
+                    ->where('note', 'like', '%' . $receipt->transaction_reference . '%')
+                    ->first();
+            }
+            if (! $cle) {
+                $cle = DB::table('cash_ledger_entries')
+                    ->where('source_type', 'account')
+                    ->where('source_id', $account->id)
+                    ->where('amount', $oldAmount)
+                    ->where('direction', $direction)
+                    ->whereDate('occurred_on', Carbon::parse($receipt->created_at)->toDateString())
+                    ->first();
+            }
+
+            if ($cle) {
+                $prefix = $isWithdrawal ? "Withdrawal from {$account->account_no}" : "Deposit to {$account->account_no}";
+                DB::table('cash_ledger_entries')->where('id', $cle->id)->update([
+                    'location' => $newLocation,
+                    'amount' => $newAmount,
+                    'note' => ($data['note'] ? $data['note'] . " - " : "") . "{$prefix} (Ref: {$receipt->transaction_reference})",
+                    'occurred_on' => $newDate->toDateString(),
+                    'bank_account_id' => ($newLocation === 'bank' && !empty($data['bank_account_id'])) ? (int) $data['bank_account_id'] : null,
+                    'updated_at' => now(),
+                ]);
+            } else if ($diff != 0) {
+                $cleCategory = $isWithdrawal ? 'withdrawal_correction' : 'deposit_correction';
+                $cleDirection = $diff > 0 ? 'credit' : 'debit';
+                FinanceLedger::cash(
+                    $newLocation,
+                    $cleDirection,
+                    $cleCategory,
+                    abs($diff),
+                    "Correction for {$receipt->category} receipt {$receipt->receipt_no}: " . ($data['correction_reason'] ?? 'Wrong entry correction'),
+                    $request->user()->id,
+                    'account',
+                    $account->id,
+                    $newDate->toDateString()
+                );
+            }
+
+            // If bank account balance needs updating
+            if (!empty($data['bank_account_id']) && $newLocation === 'bank' && $diff != 0) {
+                DB::table('bank_accounts')->where('id', (int) $data['bank_account_id'])->increment('current_balance', $diff, ['updated_at' => now()]);
+            }
+
+            // 4. Update the receipt
+            DB::table('receipts')->where('id', $receipt->id)->update([
+                'amount' => $newAmount,
+                'payment_mode' => $data['payment_mode'],
+                'notes' => $data['note'] ?? $receipt->notes,
+                'created_at' => $newDate,
+                'updated_at' => now(),
+            ]);
+        });
+
+        $afterState = [
+            'type' => $receipt->category,
+            'amount' => $newAmount,
+            'payment_mode' => $data['payment_mode'],
+            'date' => $entryDateStr,
+            'notes' => $data['note'] ?? $receipt->notes,
+            'correction_reason' => $data['correction_reason'] ?? 'Not specified',
+            'balance_diff' => $diff,
+            'new_account_balance' => (float) $account->balance + $diff,
+        ];
+
+        $auditAction = $isWithdrawal ? 'withdrawal.corrected' : 'deposit.corrected';
+        $this->audit($request, $auditAction, 'receipt', $receipt->id, $beforeState, $afterState);
+        CreditScore::recalculate($receipt->member_id);
+
+        $typeLabel = $isWithdrawal ? 'Withdrawal' : 'Deposit';
+        $diffMsg = $diff != 0 ? " (Account balance adjusted by ₹" . number_format($diff, 2) . ")" : "";
+        return back()->with('ok', "Wrong entry for {$typeLabel} receipt {$receipt->receipt_no} has been corrected successfully{$diffMsg}.");
+    }
+
+    public function updateDeposit(Request $request, int $id)
+    {
+        return $this->updateTransaction($request, $id);
     }
 
     public function recordWithdrawal(Request $request)
@@ -1552,7 +1771,8 @@ class AdminController extends Controller
         $this->permit($request, 'withdrawal.create');
         $data = $request->validate([
             'account_id' => 'required|exists:accounts,id',
-            'amount' => 'required|numeric|min:1',
+            'amount' => 'required|numeric|min:0.01',
+            'withdrawal_date' => 'nullable|date',
             'payment_mode' => 'required|in:cash,bank,upi',
             'bank_account_id' => 'nullable|exists:bank_accounts,id',
             'reason' => 'nullable|string|max:255',
@@ -1564,7 +1784,8 @@ class AdminController extends Controller
                 $data['payment_mode'],
                 isset($data['bank_account_id']) ? (int) $data['bank_account_id'] : null,
                 $data['reason'] ?? null,
-                $request->user()->id
+                $request->user()->id,
+                $data['withdrawal_date'] ?? null
             );
             $this->audit($request, 'withdrawal.recorded', 'account', $data['account_id'], null, $result);
             return back()->with('ok', "Withdrawal of ₹" . number_format($data['amount'], 2) . " debited. Receipt No: {$result['receipt_no']}");

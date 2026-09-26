@@ -17,15 +17,17 @@ final class TransactionManager
         string $paymentMode = 'cash',
         ?int $bankAccountId = null,
         ?string $note = null,
-        ?int $staffId = null
+        ?int $staffId = null,
+        ?string $depositDate = null
     ): array {
         if ($amount <= 0) {
             throw new InvalidArgumentException('Deposit amount must be greater than zero.');
         }
 
-        return DB::transaction(function () use ($accountId, $amount, $paymentMode, $bankAccountId, $note, $staffId) {
+        return DB::transaction(function () use ($accountId, $amount, $paymentMode, $bankAccountId, $note, $staffId, $depositDate) {
             $account = DB::table('accounts')->where('id', $accountId)->lockForUpdate()->firstOrFail();
             $member = DB::table('members')->where('id', $account->member_id)->firstOrFail();
+            $entryDate = $depositDate ? Carbon::parse($depositDate) : now();
 
             // 1. Update Account balance
             DB::table('accounts')->where('id', $accountId)->increment('balance', $amount, ['updated_at' => now()]);
@@ -39,9 +41,9 @@ final class TransactionManager
                 'amount' => $amount,
                 'description' => $note ?: "Deposit to account {$account->account_no}",
                 'status' => 'posted',
-                'posted_at' => now(),
+                'posted_at' => $entryDate,
                 'created_by' => $staffId,
-                'created_at' => now(),
+                'created_at' => $entryDate,
                 'updated_at' => now(),
             ]);
 
@@ -52,10 +54,11 @@ final class TransactionManager
                 'credit',
                 'deposit',
                 $amount,
-                "Deposit to {$account->account_no}",
+                $note ? "{$note} - Deposit to {$account->account_no} (Ref: {$txRef})" : "Deposit to {$account->account_no} (Ref: {$txRef})",
                 $staffId,
                 'account',
-                $accountId
+                $accountId,
+                $entryDate->toDateString()
             );
 
             if ($location === 'bank' && $bankAccountId) {
@@ -72,7 +75,8 @@ final class TransactionManager
                 null,
                 $txRef,
                 $note,
-                $staffId
+                $staffId,
+                $entryDate->toDateTimeString()
             );
 
             // 5. Send Notification
@@ -106,15 +110,17 @@ final class TransactionManager
         string $paymentMode = 'cash',
         ?int $bankAccountId = null,
         ?string $reason = null,
-        ?int $staffId = null
+        ?int $staffId = null,
+        ?string $withdrawalDate = null
     ): array {
         if ($amount <= 0) {
             throw new InvalidArgumentException('Withdrawal amount must be greater than zero.');
         }
 
-        return DB::transaction(function () use ($accountId, $amount, $paymentMode, $bankAccountId, $reason, $staffId) {
+        return DB::transaction(function () use ($accountId, $amount, $paymentMode, $bankAccountId, $reason, $staffId, $withdrawalDate) {
             $account = DB::table('accounts')->where('id', $accountId)->lockForUpdate()->firstOrFail();
             $member = DB::table('members')->where('id', $account->member_id)->firstOrFail();
+            $entryDate = $withdrawalDate ? Carbon::parse($withdrawalDate) : now();
 
             if ((float) $account->balance < $amount) {
                 throw new InvalidArgumentException("Insufficient balance. Available: ₹" . number_format((float) $account->balance, 2));
@@ -132,9 +138,9 @@ final class TransactionManager
                 'amount' => $amount,
                 'description' => $reason ? "Withdrawal: {$reason}" : "Withdrawal from {$account->account_no}",
                 'status' => 'posted',
-                'posted_at' => now(),
+                'posted_at' => $entryDate,
                 'created_by' => $staffId,
-                'created_at' => now(),
+                'created_at' => $entryDate,
                 'updated_at' => now(),
             ]);
 
@@ -145,10 +151,11 @@ final class TransactionManager
                 'debit',
                 'withdrawal',
                 $amount,
-                "Withdrawal from {$account->account_no}",
+                $reason ? "{$reason} - Withdrawal from {$account->account_no} (Ref: {$txRef})" : "Withdrawal from {$account->account_no} (Ref: {$txRef})",
                 $staffId,
                 'account',
-                $accountId
+                $accountId,
+                $entryDate->toDateString()
             );
 
             if ($location === 'bank' && $bankAccountId) {
@@ -165,7 +172,8 @@ final class TransactionManager
                 null,
                 $txRef,
                 $reason,
-                $staffId
+                $staffId,
+                $entryDate->toDateTimeString()
             );
 
             // 5. Send Notification

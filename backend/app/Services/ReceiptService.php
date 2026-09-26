@@ -18,7 +18,8 @@ final class ReceiptService
         ?int $loanId = null,
         ?string $transactionRef = null,
         ?string $notes = null,
-        ?int $issuedBy = null
+        ?int $issuedBy = null,
+        ?string $date = null
     ): object {
         $receiptNo = SequenceService::nextReceiptNo();
         $member = DB::table('members')->join('users', 'users.id', '=', 'members.user_id')
@@ -27,6 +28,7 @@ final class ReceiptService
             ->first();
 
         $payerName = $member ? $member->name : 'Society Member';
+        $timestamp = $date ? \Carbon\Carbon::parse($date) : now();
 
         $id = DB::table('receipts')->insertGetId([
             'receipt_no' => $receiptNo,
@@ -40,8 +42,8 @@ final class ReceiptService
             'payer_name' => $payerName,
             'notes' => $notes,
             'issued_by' => $issuedBy,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $timestamp,
+            'updated_at' => $timestamp,
         ]);
 
         return DB::table('receipts')->where('id', $id)->first();
