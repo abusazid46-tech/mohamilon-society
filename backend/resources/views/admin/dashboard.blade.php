@@ -1676,7 +1676,10 @@
                                 <a href="/admin/members/{{ $m->id }}/form" target="_blank" class="button" style="padding: 3px 8px; font-size: 11px; background: #0284c7; color: white; border-radius: 4px; text-decoration: none; display: inline-flex; align-items: center; gap: 3px;" title="Print Application Form">
                                     <i class="bi bi-printer"></i> Form
                                 </a>
-                                <button type="button" onclick="openEditMemberModal({{ json_encode($m) }})" style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details">
+                                <button type="button" 
+                                    data-member="{{ htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8') }}"
+                                    onclick="openEditMemberModal(this)"
+                                    style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details">
                                     <i class="bi bi-pencil-square"></i> Edit
                                 </button>
                                 <form method="post" action="/admin/members/{{ $m->id }}/delete" onsubmit="return confirm('Are you sure you want to permanently delete customer {{ $m->member_no }} ({{ addslashes($m->name) }})? All related loans, accounts, and records will be deleted.');" style="display: inline; margin: 0;">
@@ -2110,7 +2113,7 @@
                                 <div style="display: inline-flex; align-items: center; gap: 4px;">
                                     @if($can('deposit.create') || $can('withdrawal.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager','secretary'], true))
                                     <button type="button" class="button" style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: #0f172a; display: inline-flex; align-items: center; gap: 3px; border: none; font-weight: 700; cursor: pointer; border-radius: 4px;"
-                                        onclick="openEditDepositModal({{ json_encode([
+                                        data-tx="{{ htmlspecialchars(json_encode([
                                             'id' => $r->id,
                                             'receipt_no' => $r->receipt_no,
                                             'account_id' => $r->account_id,
@@ -2123,7 +2126,8 @@
                                             'notes' => $r->notes,
                                             'date' => \Carbon\Carbon::parse($r->created_at)->format('Y-m-d'),
                                             'category' => $r->category,
-                                        ]) }})"
+                                        ]), ENT_QUOTES, 'UTF-8') }}"
+                                        onclick="openEditDepositModal(this)"
                                         title="Edit / Correct Wrong Entry">
                                         <i class="bi bi-pencil-square"></i> Edit
                                     </button>
@@ -2416,7 +2420,7 @@
                 <div style="display:inline-flex;align-items:center;gap:4px;">
                     @if($can('deposit.create') || $can('withdrawal.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager','secretary'], true))
                     <button type="button" class="button" style="padding:4px 8px;font-size:11px;background:#f59e0b;color:#0f172a;font-weight:700;border:none;border-radius:4px;cursor:pointer;"
-                        onclick="openEditDepositModal({{ json_encode([
+                        data-tx="{{ htmlspecialchars(json_encode([
                             'id' => $r->id,
                             'receipt_no' => $r->receipt_no,
                             'account_id' => $r->account_id,
@@ -2429,7 +2433,8 @@
                             'notes' => $r->notes,
                             'date' => \Carbon\Carbon::parse($r->created_at)->format('Y-m-d'),
                             'category' => $r->category,
-                        ]) }})"
+                        ]), ENT_QUOTES, 'UTF-8') }}"
+                        onclick="openEditDepositModal(this)"
                         title="Edit / Correct Wrong Entry">
                         <i class="bi bi-pencil-square"></i> Edit
                     </button>
@@ -4153,6 +4158,18 @@
     }
 
     function openEditMemberModal(m) {
+        if (m instanceof HTMLElement) {
+            try {
+                const raw = m.getAttribute('data-member');
+                m = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            } catch(e) {
+                console.error('Failed to parse member data:', e);
+                return;
+            }
+        } else if (typeof m === 'string') {
+            try { m = JSON.parse(m); } catch(e) {}
+        }
+        if (!m) return;
         const modal = document.getElementById('editCustomerModal');
         if (!modal) return;
         document.getElementById('editModalTitle').textContent = 'Edit Customer: ' + (m.member_no || '') + ' (' + (m.name || '') + ')';
@@ -4690,6 +4707,8 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
 
     <!-- ================= EDIT DEPOSIT / WRONG ENTRY CORRECTION MODAL ================= -->
     <div id="editDepositModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); z-index: 99999; justify-content: center; align-items: center; padding: 20px;">
@@ -4892,9 +4911,25 @@
         }
 
         function openEditDepositModal(r) {
+            if (r instanceof HTMLElement) {
+                try {
+                    const raw = r.getAttribute('data-tx');
+                    r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                } catch(e) {
+                    console.error('Failed to parse tx data:', e);
+                    return;
+                }
+            } else if (typeof r === 'string') {
+                try { r = JSON.parse(r); } catch(e) {}
+            }
+            if (!r) return;
+
             const modal = document.getElementById('editDepositModal');
             const form = document.getElementById('editDepositForm');
-            if (!modal || !form) return;
+            if (!modal || !form) {
+                console.error('editDepositModal or editDepositForm not found in DOM');
+                return;
+            }
 
             const isWithdrawal = (r.category || '').toLowerCase() === 'withdrawal';
             form.dataset.isWithdrawal = isWithdrawal ? '1' : '0';
