@@ -57,6 +57,17 @@
         <span style="color:var(--muted);font-size:12px">Member 360° View · Section 2.2</span>
     </div>
 
+    @if(session('ok'))
+    <div style="background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 700; font-size: 13px;">
+        <i class="bi bi-check-circle-fill"></i> {{ session('ok') }}
+    </div>
+    @endif
+    @if(isset($errors) && $errors->any())
+    <div style="background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 700; font-size: 13px;">
+        <i class="bi bi-exclamation-triangle-fill"></i> {{ $errors->first() }}
+    </div>
+    @endif
+
     <!-- Header Summary Card -->
     <header class="profile-top">
         <div class="top-row">
@@ -80,6 +91,8 @@
                 </div>
             </div>
             <div class="actions-bar">
+                <button type="button" onclick="openProfileEditModal()" class="button" style="background:#f59e0b; color:white; border:none; cursor:pointer; font-weight:700;">✏️ Edit Customer Form</button>
+                <a href="/admin/members/{{ $member->id }}/form" target="_blank" class="button secondary">🖨️ Application Form</a>
                 <a href="/admin/statements/{{ $member->id }}/print" target="_blank" class="button">📄 Official Statement</a>
                 <a href="/admin/members/{{ $member->id }}/card" target="_blank" class="button secondary">🪪 Print ID Card</a>
                 <a href="/admin/members/{{ $member->id }}/kyc-folder" class="button secondary">📁 Download KYC Folder</a>
@@ -149,16 +162,57 @@
     <!-- TAB 1: Personal & Nominee Details -->
     <section id="tab-personal" class="tab-content">
         <div class="panel-card">
-            <h2>Personal Details & Membership Metadata <small>Registered: {{ \Carbon\Carbon::parse($member->registered_at)->format('d M Y, h:i A') }}</small></h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h2 style="margin: 0;">Personal Details & Family Particulars <small>Registered: {{ \Carbon\Carbon::parse($member->registered_at)->format('d M Y, h:i A') }}</small></h2>
+                <button type="button" onclick="openProfileEditModal()" class="button" style="background:#f59e0b; color:white; font-size:12px; padding:4px 10px; border:none; cursor:pointer; font-weight:700;">✏️ Edit Particulars</button>
+            </div>
             <div class="field-grid">
                 <div class="field-item"><label>Full Name</label><div>{{ $member->name }}</div></div>
                 <div class="field-item"><label>Membership ID</label><div>{{ $member->member_no }}</div></div>
+                <div class="field-item"><label>S/o, W/o, D/o</label><div>{{ $member->parent_name ?: ($member->father_name ?: 'Not provided') }}</div></div>
+                <div class="field-item"><label>Mother’s Name</label><div>{{ $member->mother_name ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Father’s Name</label><div>{{ $member->father_name ?: ($member->parent_name ?: 'Not provided') }}</div></div>
+                <div class="field-item"><label>Date of Birth</label><div>{{ $member->date_of_birth ? \Carbon\Carbon::parse($member->date_of_birth)->format('d M Y') . ' (' . ($member->age ?: $age) . ' years)' : 'Not provided' }}</div></div>
+                <div class="field-item"><label>Blood Group</label><div>{{ $member->blood_group ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Educational Qualification</label><div>{{ $member->qualification ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Marital Status</label><div>{{ $member->marital_status ?: 'Not provided' }}</div></div>
                 <div class="field-item"><label>Mobile Phone</label><div>{{ $member->phone }}</div></div>
                 <div class="field-item"><label>Email Address</label><div>{{ $member->email ?: 'Not provided' }}</div></div>
-                <div class="field-item"><label>Date of Birth</label><div>{{ $member->date_of_birth ? \Carbon\Carbon::parse($member->date_of_birth)->format('d M Y') . ' (' . $age . ' years)' : 'Not provided' }}</div></div>
-                <div class="field-item"><label>Occupation</label><div>{{ $member->occupation ?: 'Not provided' }}</div></div>
-                <div class="field-item"><label>Residential Address</label><div>{{ $member->address ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Pin Code</label><div>{{ $member->pincode ?: 'Not provided' }}</div></div>
+                <div class="field-item" style="grid-column: 1 / -1;"><label>Permanent Residential Address</label><div>{{ $member->address ?: 'Not provided' }}</div></div>
+                <div class="field-item" style="grid-column: 1 / -1;"><label>Present / Correspondence Address</label><div>{{ $member->present_address ?: ($member->address ?: 'Same as permanent') }}</div></div>
                 <div class="field-item"><label>Membership Approval</label><div>{{ $member->approved_at ? \Carbon\Carbon::parse($member->approved_at)->format('d M Y') . ' by ' . ($member->approver_name ?: 'System') : 'Pending approval' }}</div></div>
+            </div>
+        </div>
+
+        <div class="panel-card">
+            <h2>Banking Particulars (Multiple Banks)</h2>
+            <div class="field-grid" style="margin-bottom: 12px;">
+                <div class="field-item"><label>Primary Bank Name</label><div>{{ $member->bank_name ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Primary Account No.</label><div>{{ $member->bank_account_no ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Primary IFSC Code</label><div>{{ $member->bank_ifsc ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Primary Branch</label><div>{{ $member->bank_branch ?: 'Not provided' }}</div></div>
+            </div>
+            @if(!empty($member->bank2_name) || !empty($member->bank2_account_no))
+            <h3 style="font-size: 13px; color: var(--navy); margin: 12px 0 8px;">Secondary / Additional Bank Account</h3>
+            <div class="field-grid">
+                <div class="field-item"><label>Secondary Bank Name</label><div>{{ $member->bank2_name ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Secondary Account No.</label><div>{{ $member->bank2_account_no ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Secondary IFSC Code</label><div>{{ $member->bank2_ifsc ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Secondary Branch</label><div>{{ $member->bank2_branch ?: 'Not provided' }}</div></div>
+            </div>
+            @endif
+        </div>
+
+        <div class="panel-card">
+            <h2>Employment, Tax & Credit Score</h2>
+            <div class="field-grid">
+                <div class="field-item"><label>Employed In / Profession</label><div>{{ $member->occupation ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Office Address</label><div>{{ $member->office_address ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Designation & Salary Drawn</label><div>{{ $member->designation_salary ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Aadhaar Number</label><div>{{ $member->aadhaar_no ?: ($member->aadhaar_last4 ?: 'Not submitted') }}</div></div>
+                <div class="field-item"><label>PAN Number</label><div>{{ $member->pan_no ?: ($member->pan_last4 ?: 'Not submitted') }}</div></div>
+                <div class="field-item"><label>Relative Member in Society</label><div>{{ $member->relative_member_details ?: 'None' }}</div></div>
             </div>
         </div>
 
@@ -166,8 +220,35 @@
             <h2>Nominee Information</h2>
             <div class="field-grid">
                 <div class="field-item"><label>Nominee Name</label><div>{{ $member->nominee_name ?: 'Not registered' }}</div></div>
-                <div class="field-item"><label>Member Relationship</label><div>Registered nominee for all accounts and claims</div></div>
-                <div class="field-item"><label>Nominee Rights</label><div>Entitled to account balance & settlement in event of unforeseen casualty</div></div>
+                <div class="field-item"><label>Nominee S/o, W/o, D/o</label><div>{{ $member->nominee_parent ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Relationship</label><div>{{ $member->nominee_relation ?: 'Registered nominee for all accounts' }}</div></div>
+                <div class="field-item"><label>Nominee Age</label><div>{{ $member->nominee_age ? $member->nominee_age . ' years' : 'Not provided' }}</div></div>
+                <div class="field-item"><label>Nominee Occupation</label><div>{{ $member->nominee_occupation ?: 'Not provided' }}</div></div>
+                <div class="field-item"><label>Nominee Address</label><div>{{ $member->nominee_address ?: ($member->address ?: 'Not provided') }}</div></div>
+            </div>
+        </div>
+
+        <div class="panel-card">
+            <h2>Declaration by Introducers</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                    <strong style="color: var(--navy); display: block; margin-bottom: 8px;">Introducer Member 1</strong>
+                    <div style="font-size: 13px; line-height: 1.6;">
+                        <div><b>Name:</b> {{ $member->intro1_name ?: 'Not provided' }}</div>
+                        <div><b>S/o, W/o, D/o:</b> {{ $member->intro1_parent ?: 'Not provided' }}</div>
+                        <div><b>Account No:</b> {{ $member->intro1_account ?: '—' }} &nbsp;|&nbsp; <b>LF No:</b> {{ $member->intro1_lf ?: '—' }}</div>
+                        <div><b>Address:</b> {{ $member->intro1_address ?: 'Not provided' }}</div>
+                    </div>
+                </div>
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+                    <strong style="color: var(--navy); display: block; margin-bottom: 8px;">Introducer Member 2</strong>
+                    <div style="font-size: 13px; line-height: 1.6;">
+                        <div><b>Name:</b> {{ $member->intro2_name ?: 'Not provided' }}</div>
+                        <div><b>S/o, W/o, D/o:</b> {{ $member->intro2_parent ?: 'Not provided' }}</div>
+                        <div><b>Account No:</b> {{ $member->intro2_account ?: '—' }} &nbsp;|&nbsp; <b>LF No:</b> {{ $member->intro2_lf ?: '—' }}</div>
+                        <div><b>Address:</b> {{ $member->intro2_address ?: 'Not provided' }}</div>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -177,8 +258,8 @@
         <div class="panel-card">
             <h2>KYC Status & Identification Details <small>Overall Status: <span class="badge {{ $member->kyc_status }}">{{ str_replace('_', ' ', $member->kyc_status) }}</span></small></h2>
             <div class="field-grid" style="margin-bottom:20px">
-                <div class="field-item"><label>Aadhaar Last 4</label><div>{{ $member->aadhaar_last4 ? 'XXXX-XXXX-' . $member->aadhaar_last4 : 'Not submitted' }}</div></div>
-                <div class="field-item"><label>PAN Last 4</label><div>{{ $member->pan_last4 ? 'XXXXXX' . $member->pan_last4 : 'Not submitted' }}</div></div>
+                <div class="field-item"><label>Aadhaar Number</label><div>{{ $member->aadhaar_no ?: ($member->aadhaar_last4 ?: 'Not submitted') }}</div></div>
+                <div class="field-item"><label>PAN Number</label><div>{{ $member->pan_no ?: ($member->pan_last4 ?: 'Not submitted') }}</div></div>
                 <div class="field-item"><label>Approval Status</label><div><span class="badge {{ $member->kyc_status }}">{{ strtoupper(str_replace('_', ' ', $member->kyc_status)) }}</span></div></div>
             </div>
 
@@ -602,14 +683,338 @@
     </section>
 </div>
 
-<script>
-    function showTab(tabId) {
-        document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-        const activeSection = document.getElementById(tabId);
-        if (activeSection) activeSection.style.display = 'block';
-        event.currentTarget.classList.add('active');
-    }
-</script>
+    <!-- ================= EDIT CUSTOMER & APPLICATION FORM MODAL ================= -->
+    <div id="profileEditCustomerModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); z-index: 99999; justify-content: center; align-items: center; padding: 20px;">
+        <div style="background: white; border-radius: 12px; width: 100%; max-width: 900px; max-height: 90vh; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+            <div style="background: linear-gradient(135deg, #0284c7, #0369a1); padding: 16px 22px; color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="bi bi-pencil-square" style="font-size: 20px;"></i>
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: white;">Edit Customer Form & Details</h3>
+                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #e0f2fe;">Editing Customer: {{ $member->member_no }} — {{ $member->name }}</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeProfileEditModal()" style="background: none; border: none; color: white; font-size: 26px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+
+            <form method="post" action="/admin/members/{{ $member->id }}/update" style="padding: 22px; margin: 0; overflow-y: auto; flex: 1;">
+                @csrf
+
+                <!-- SECTION 1: ACCOUNT & STATUS -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        1. Account & Membership Status
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1.5fr 1fr 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Member No <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="member_no" value="{{ $member->member_no }}" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; font-weight: 700;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Customer Full Name <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="name" value="{{ $member->name }}" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; font-weight: 700;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Account Status <span style="color:#dc2626">*</span></label>
+                            <select name="status" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="active" {{ ($member->user_status ?? $member->status ?? 'active') === 'active' ? 'selected' : '' }}>Active</option>
+                                <option value="pending" {{ ($member->user_status ?? $member->status ?? '') === 'pending' ? 'selected' : '' }}>Pending</option>
+                                <option value="suspended" {{ ($member->user_status ?? $member->status ?? '') === 'suspended' ? 'selected' : '' }}>Suspended</option>
+                                <option value="blocked" {{ ($member->user_status ?? $member->status ?? '') === 'blocked' ? 'selected' : '' }}>Blocked</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">KYC Status <span style="color:#dc2626">*</span></label>
+                            <select name="kyc_status" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="not_submitted" {{ ($member->kyc_status ?? 'not_submitted') === 'not_submitted' ? 'selected' : '' }}>Not Submitted</option>
+                                <option value="pending" {{ ($member->kyc_status ?? '') === 'pending' ? 'selected' : '' }}>Pending</option>
+                                <option value="approved" {{ ($member->kyc_status ?? '') === 'approved' ? 'selected' : '' }}>Approved</option>
+                                <option value="rejected" {{ ($member->kyc_status ?? '') === 'rejected' ? 'selected' : '' }}>Rejected</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Joining Date</label>
+                            <input type="date" name="created_at" value="{{ $member->created_at ? substr($member->created_at, 0, 10) : '' }}" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 2: PARENTS & PERSONAL DETAILS -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        2. Family & Personal Particulars
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">2(a). S/o, W/o, D/o</label>
+                            <input type="text" name="parent_name" value="{{ $member->parent_name }}" placeholder="Son / Wife / Daughter of..." style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">2(b). Mother’s Name</label>
+                            <input type="text" name="mother_name" value="{{ $member->mother_name }}" placeholder="Mother's Full Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">2(c). Father’s Name</label>
+                            <input type="text" name="father_name" value="{{ $member->father_name }}" placeholder="Father's Full Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Date of Birth</label>
+                            <input type="date" name="date_of_birth" value="{{ $member->date_of_birth ? substr($member->date_of_birth, 0, 10) : '' }}" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Age (Years)</label>
+                            <input type="number" name="age" value="{{ $member->age }}" min="1" max="120" placeholder="e.g. 32" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Blood Group</label>
+                            <select name="blood_group" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="">Select</option>
+                                @foreach(['O+','A+','B+','AB+','O-','A-','B-','AB-'] as $bg)
+                                <option value="{{ $bg }}" {{ ($member->blood_group ?? '') === $bg ? 'selected' : '' }}>{{ $bg }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Qualification</label>
+                            <input type="text" name="qualification" value="{{ $member->qualification }}" placeholder="e.g. Graduate / HS" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Marital Status</label>
+                            <select name="marital_status" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                @foreach(['Married','Single','Widowed','Divorced'] as $ms)
+                                <option value="{{ $ms }}" {{ ($member->marital_status ?? 'Married') === $ms ? 'selected' : '' }}>{{ $ms }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 3: CONTACT & ADDRESSES -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        3. Contact & Addresses
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Mobile Phone <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="phone" value="{{ $member->phone }}" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Email Address</label>
+                            <input type="email" name="email" value="{{ $member->email }}" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Reset MPIN (6-digit, optional)</label>
+                            <input type="password" name="mpin" maxlength="6" pattern="^[0-9]{6}$" placeholder="Leave blank to keep" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Permanent Address <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="address" value="{{ $member->address }}" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Present / Correspondence Address</label>
+                            <input type="text" name="present_address" value="{{ $member->present_address }}" placeholder="Present Address" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Pin Code</label>
+                            <input type="text" name="pincode" value="{{ $member->pincode }}" placeholder="e.g. 781001" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 4: BANKING PARTICULARS (ALL BANKS) -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        4. Banking Particulars (Multiple Banks)
+                    </div>
+                    <!-- Bank 1 -->
+                    <div style="margin-bottom: 10px;">
+                        <span style="font-size: 11px; font-weight: 700; color: #1e293b; display: block; margin-bottom: 4px;">Primary Bank Account</span>
+                        <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Bank Name</label>
+                                <input type="text" name="bank_name" value="{{ $member->bank_name }}" placeholder="e.g. State Bank of India" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Account Number</label>
+                                <input type="text" name="bank_account_no" value="{{ $member->bank_account_no }}" placeholder="Bank Account Number" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">IFSC Code</label>
+                                <input type="text" name="bank_ifsc" value="{{ $member->bank_ifsc }}" placeholder="e.g. SBIN0001234" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; text-transform: uppercase;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Branch</label>
+                                <input type="text" name="bank_branch" value="{{ $member->bank_branch }}" placeholder="Branch Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Bank 2 -->
+                    <div>
+                        <span style="font-size: 11px; font-weight: 700; color: #1e293b; display: block; margin-bottom: 4px;">Secondary Bank Account (Optional)</span>
+                        <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Bank 2 Name</label>
+                                <input type="text" name="bank2_name" value="{{ $member->bank2_name }}" placeholder="e.g. HDFC / Axis Bank" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Account Number</label>
+                                <input type="text" name="bank2_account_no" value="{{ $member->bank2_account_no }}" placeholder="Account Number" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">IFSC Code</label>
+                                <input type="text" name="bank2_ifsc" value="{{ $member->bank2_ifsc }}" placeholder="e.g. HDFC0001234" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; text-transform: uppercase;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Branch</label>
+                                <input type="text" name="bank2_branch" value="{{ $member->bank2_branch }}" placeholder="Branch Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 5: EMPLOYMENT & TAX -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        5. Employment, Tax & Score
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.2fr 2fr 1.5fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Employed In / Occupation</label>
+                            <input type="text" name="occupation" value="{{ $member->occupation }}" placeholder="e.g. Govt / Business / Private" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Office Address</label>
+                            <input type="text" name="office_address" value="{{ $member->office_address }}" placeholder="Office / Shop Address" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Designation & Salary Drawn</label>
+                            <input type="text" name="designation_salary" value="{{ $member->designation_salary }}" placeholder="e.g. Executive, Rs. 35,000" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Aadhaar Number</label>
+                            <input type="text" name="aadhaar" value="{{ $member->aadhaar_no ?? $member->aadhaar_last4 }}" placeholder="12-digit Aadhaar" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">PAN Number</label>
+                            <input type="text" name="pan" value="{{ $member->pan_no ?? $member->pan_last4 }}" placeholder="ABCDE1234F" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; text-transform: uppercase;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">MCS Credit Score (300-900)</label>
+                            <input type="number" name="mcs_score" value="{{ $member->mcs_score ?? 500 }}" min="300" max="900" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; font-weight: 700;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Relative in Society (if any)</label>
+                            <input type="text" name="relative_member_details" value="{{ $member->relative_member_details }}" placeholder="Name, Relation, A/c No." style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 6: NOMINEE -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        6. Nomination Clause
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr 0.8fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Full Name <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="nominee_name" value="{{ $member->nominee_name }}" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee S/o, W/o, D/o</label>
+                            <input type="text" name="nominee_parent" value="{{ $member->nominee_parent }}" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Relationship</label>
+                            <input type="text" name="nominee_relation" value="{{ $member->nominee_relation }}" placeholder="e.g. Spouse / Son" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Age</label>
+                            <input type="number" name="nominee_age" value="{{ $member->nominee_age }}" min="1" max="120" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Occupation</label>
+                            <input type="text" name="nominee_occupation" value="{{ $member->nominee_occupation }}" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Address</label>
+                        <input type="text" name="nominee_address" value="{{ $member->nominee_address }}" placeholder="Residential Address of Nominee" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                    </div>
+                </div>
+
+                <!-- SECTION 7: INTRODUCERS -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
+                        7. Introducer Declarations
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <!-- Introducer 1 -->
+                        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: white;">
+                            <div style="font-size: 11.5px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">Introducer Member 1</div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <input type="text" name="intro1_name" value="{{ $member->intro1_name }}" placeholder="1. Full Name of Introducer" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input type="text" name="intro1_parent" value="{{ $member->intro1_parent }}" placeholder="S/o, W/o, D/o" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <input type="text" name="intro1_account" value="{{ $member->intro1_account }}" placeholder="Account No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                    <input type="text" name="intro1_lf" value="{{ $member->intro1_lf }}" placeholder="LF No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                </div>
+                                <input type="text" name="intro1_address" value="{{ $member->intro1_address }}" placeholder="Address" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                        <!-- Introducer 2 -->
+                        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: white;">
+                            <div style="font-size: 11.5px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">Introducer Member 2</div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <input type="text" name="intro2_name" value="{{ $member->intro2_name }}" placeholder="2. Full Name of Introducer" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input type="text" name="intro2_parent" value="{{ $member->intro2_parent }}" placeholder="S/o, W/o, D/o" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <input type="text" name="intro2_account" value="{{ $member->intro2_account }}" placeholder="Account No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                    <input type="text" name="intro2_lf" value="{{ $member->intro2_lf }}" placeholder="LF No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                </div>
+                                <input type="text" name="intro2_address" value="{{ $member->intro2_address }}" placeholder="Address" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FORM ACTIONS -->
+                <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+                    <button type="button" onclick="closeProfileEditModal()" class="button secondary" style="padding: 8px 18px; font-size: 13px;">Cancel</button>
+                    <button type="submit" class="button" style="background: #0284c7; color: white; padding: 8px 22px; font-size: 13px; font-weight: 700;">
+                        ✓ Save & Update Profile
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            const activeSection = document.getElementById(tabId);
+            if (activeSection) activeSection.style.display = 'block';
+            event.currentTarget.classList.add('active');
+        }
+
+        function openProfileEditModal() {
+            const m = document.getElementById('profileEditCustomerModal');
+            if (m) m.style.display = 'flex';
+        }
+        function closeProfileEditModal() {
+            const m = document.getElementById('profileEditCustomerModal');
+            if (m) m.style.display = 'none';
+        }
+        document.getElementById('profileEditCustomerModal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeProfileEditModal();
+        });
+    </script>
 </body>
 </html>

@@ -1124,24 +1124,65 @@
                 </div>
 
                 <!-- 8. Bank Details -->
-                <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr; gap: 16px; margin-bottom: 14px;">
-                    <div>
-                        <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
-                            8. Name of Bank
-                        </label>
-                        <input name="bank_name" type="text" placeholder="e.g. State Bank of India / PNB" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 14px;">
+                    <div style="font-size: 12px; font-weight: 700; color: #1e293b; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-bank"></i> 8 (a). Primary Bank Account
                     </div>
-                    <div>
-                        <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
-                            Bank Account No.
-                        </label>
-                        <input name="bank_account_no" type="text" placeholder="Bank Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                    <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                Name of Bank
+                            </label>
+                            <input name="bank_name" type="text" placeholder="e.g. State Bank of India / PNB" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                Bank Account No.
+                            </label>
+                            <input name="bank_account_no" type="text" placeholder="Bank Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                IFSC Code
+                            </label>
+                            <input name="bank_ifsc" type="text" placeholder="e.g. SBIN0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                Branch
+                            </label>
+                            <input name="bank_branch" type="text" placeholder="Branch Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        </div>
                     </div>
-                    <div>
-                        <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
-                            IFSC Code
-                        </label>
-                        <input name="bank_ifsc" type="text" placeholder="e.g. SBIN0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+
+                    <div style="font-size: 12px; font-weight: 700; color: #1e293b; margin: 12px 0 8px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-bank2"></i> 8 (b). Secondary / Additional Bank Account (Optional)
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                Name of Bank (2)
+                            </label>
+                            <input name="bank2_name" type="text" placeholder="e.g. HDFC / Axis / Co-op Bank" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                Account No. (2)
+                            </label>
+                            <input name="bank2_account_no" type="text" placeholder="Secondary Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                IFSC Code (2)
+                            </label>
+                            <input name="bank2_ifsc" type="text" placeholder="e.g. HDFC0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
+                                Branch (2)
+                            </label>
+                            <input name="bank2_branch" type="text" placeholder="Branch Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        </div>
                     </div>
                 </div>
 
@@ -1363,6 +1404,9 @@
                                 <td><b>{{$m->mcs_score}}</b>/900</td>
                                 <td>
                                     <a href="/admin/members/{{$m->id}}" class="button" style="padding: 3px 8px; font-size: 11px; background: #0284c7;">360° Profile</a>
+                                    <button type="button" data-member="{{ htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8') }}" onclick="openEditMemberModal(this)" class="button" style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details & Form">
+                                        <i class="bi bi-pencil-square"></i> Edit
+                                    </button>
                                     <a href="/admin/members/{{$m->id}}/card" target="_blank" class="button secondary" style="padding: 3px 8px; font-size: 11px;">ID Card</a>
                                     <a href="/admin/members/{{$m->id}}/form" target="_blank" class="button secondary" style="padding: 3px 8px; font-size: 11px;"><i class="bi bi-printer"></i> Form</a>
                                 </td>
@@ -1657,8 +1701,8 @@
                         <td><b>{{ $m->name }}</b></td>
                         <td>{{ $m->email ?: 'N/A' }}</td>
                         <td>{{ $m->phone }}</td>
-                        <td>{{ $m->aadhaar_last4 ? '•••• •••• ' . $m->aadhaar_last4 : '-' }}</td>
-                        <td>{{ $m->pan_last4 ? '••••••' . $m->pan_last4 : '-' }}</td>
+                        <td>{{ $m->aadhaar_no ?: ($m->aadhaar_last4 ?: '-') }}</td>
+                        <td>{{ $m->pan_no ?: ($m->pan_last4 ?: '-') }}</td>
                         <td style="max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ $m->address ?: '-' }}</td>
                         <td>{{ $m->date_of_birth ? date('d-m-Y', strtotime($m->date_of_birth)) : '-' }}</td>
                         <td>{{ date('d-m-Y', strtotime($m->created_at ?? 'now')) }}</td>
@@ -1677,6 +1721,7 @@
                                     <i class="bi bi-printer"></i> Form
                                 </a>
                                 <button type="button" 
+                                    data-member="{{ htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8') }}"
                                     data-id="{{ $m->id }}"
                                     data-member-no="{{ $m->member_no }}"
                                     data-name="{{ $m->name }}"
@@ -1686,14 +1731,14 @@
                                     data-kyc-status="{{ $m->kyc_status ?? 'not_submitted' }}"
                                     data-joining-date="{{ $m->created_at ? substr($m->created_at, 0, 10) : '' }}"
                                     data-dob="{{ $m->date_of_birth ? substr($m->date_of_birth, 0, 10) : '' }}"
-                                    data-aadhaar="{{ $m->aadhaar_last4 ?? '' }}"
-                                    data-pan="{{ $m->pan_last4 ?? '' }}"
+                                    data-aadhaar="{{ $m->aadhaar_no ?? $m->aadhaar_last4 ?? '' }}"
+                                    data-pan="{{ $m->pan_no ?? $m->pan_last4 ?? '' }}"
                                     data-nominee="{{ $m->nominee_name ?? '' }}"
                                     data-occupation="{{ $m->occupation ?? '' }}"
                                     data-score="{{ $m->mcs_score ?? 500 }}"
                                     data-address="{{ $m->address ?? '' }}"
                                     onclick="openEditMemberModal(this)"
-                                    style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details">
+                                    style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details & Form">
                                     <i class="bi bi-pencil-square"></i> Edit
                                 </button>
                                 <form method="post" action="/admin/members/{{ $m->id }}/delete" onsubmit="return confirm('Are you sure you want to permanently delete customer {{ $m->member_no }} ({{ addslashes($m->name) }})? All related loans, accounts, and records will be deleted.');" style="display: inline; margin: 0;">
@@ -1717,134 +1762,7 @@
             <button type="button" class="button secondary" style="padding: 4px 14px; font-size: 12px; border-radius: 4px;">Next</button>
         </div>
 
-        <!-- ================= EDIT CUSTOMER MODAL ================= -->
-        <div id="editCustomerModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 9999; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px);">
-            <div style="background: white; border-radius: 12px; width: 100%; max-width: 650px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25); border: 1px solid #e2e8f0;">
-                <div style="padding: 16px 22px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-top-left-radius: 12px; border-top-right-radius: 12px;">
-                    <div>
-                        <h3 style="margin: 0; font-size: 15px; font-weight: 800; color: #0f172a;" id="editModalTitle">Edit Customer Details</h3>
-                        <span class="muted" style="font-size: 11px;">Update customer information, KYC status and account settings</span>
-                    </div>
-                    <button type="button" onclick="closeEditMemberModal()" style="background: none; border: none; font-size: 22px; color: #64748b; cursor: pointer; line-height: 1;">&times;</button>
-                </div>
 
-                <form id="editMemberForm" method="post" action="" style="padding: 22px;">
-                    @csrf
-                    <!-- Row 1: Customer ID & Full Name -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Customer ID / Member No *</label>
-                            <input type="text" name="member_no" id="editMemberNo" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #0284c7; border-radius: 6px; font-size: 13px; font-weight: 700; box-sizing: border-box; background: #f0f9ff;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Full Name *</label>
-                            <input type="text" name="name" id="editMemberName" required style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                    </div>
-
-                    <!-- Row 2: Phone & Email -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Mobile Phone *</label>
-                            <input type="text" name="phone" id="editMemberPhone" required style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Email Address</label>
-                            <input type="email" name="email" id="editMemberEmail" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                    </div>
-
-                    <!-- Row 3: Account Status & KYC Status -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Account Status *</label>
-                            <select name="status" id="editMemberStatus" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                                <option value="active">Active</option>
-                                <option value="pending">Pending</option>
-                                <option value="suspended">Suspended</option>
-                                <option value="blocked">Blocked</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">KYC Status *</label>
-                            <select name="kyc_status" id="editMemberKycStatus" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                                <option value="approved">Approved</option>
-                                <option value="pending">Pending</option>
-                                <option value="not_submitted">Not Submitted</option>
-                                <option value="rejected">Rejected</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- Row 4: Date of Joining (Back-date editable) & Date of Birth -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
-                                <i class="bi bi-calendar-event"></i> Date of Joining / Registration *
-                            </label>
-                            <input type="date" name="created_at" id="editMemberJoiningDate" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: white; box-sizing: border-box;">
-                            <span style="font-size: 10px; color: #15803d; margin-top: 2px; display: block;">Editable for back-date correction</span>
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
-                                <i class="bi bi-calendar-date"></i> Date of Birth
-                            </label>
-                            <input type="date" name="date_of_birth" id="editMemberDob" style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: white; box-sizing: border-box;">
-                            <span style="font-size: 10px; color: #15803d; margin-top: 2px; display: block;">Applicant birth date</span>
-                        </div>
-                    </div>
-
-                    <!-- Row 5: Aadhaar & PAN -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Aadhaar (Last 4 or 12 Digits)</label>
-                            <input type="text" name="aadhaar" id="editMemberAadhaar" placeholder="e.g. 1234 or full Aadhaar" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">PAN Card</label>
-                            <input type="text" name="pan" id="editMemberPan" placeholder="e.g. ABCDE1234F" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase; box-sizing: border-box;">
-                        </div>
-                    </div>
-
-                    <!-- Row 6: Nominee Name & Occupation -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Name *</label>
-                            <input type="text" name="nominee_name" id="editMemberNominee" required style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Occupation</label>
-                            <input type="text" name="occupation" id="editMemberOccupation" placeholder="e.g. Business / Service" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                    </div>
-
-                    <!-- Row 7: Credit / Society Score & Reset MPIN -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Society / Credit Score (300 - 900)</label>
-                            <input type="number" name="mcs_score" id="editMemberScore" min="300" max="900" placeholder="500" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                        <div>
-                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Reset MPIN (Optional 6 Digits)</label>
-                            <input type="password" name="mpin" id="editMemberMpin" maxlength="6" placeholder="Leave blank to keep existing" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;">
-                        </div>
-                    </div>
-
-                    <!-- Row 8: Residential Address -->
-                    <div style="margin-bottom: 16px;">
-                        <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Residential Address *</label>
-                        <textarea name="address" id="editMemberAddress" rows="2" required style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; box-sizing: border-box;"></textarea>
-                    </div>
-
-                    <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 14px;">
-                        <button type="button" onclick="closeEditMemberModal()" class="button secondary" style="padding: 8px 18px; font-size: 13px; font-weight: 600; border-radius: 6px;">Cancel</button>
-                        <button type="submit" class="button" style="padding: 8px 22px; font-size: 13px; font-weight: 800; background: #0284c7; color: white; border-radius: 6px; border: none; cursor: pointer;">
-                            <i class="bi bi-save"></i> Save Changes
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
     </section>
 
     <!-- ================= CUSTOMER SUBSECTION 5: NOMINEE ================= -->
@@ -4170,7 +4088,15 @@
     function openEditMemberModal(m) {
         let data = {};
         if (m instanceof HTMLElement) {
-            if (m.dataset.id) {
+            if (m.getAttribute('data-member')) {
+                try {
+                    let raw = m.getAttribute('data-member');
+                    raw = raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                    data = JSON.parse(raw);
+                } catch(e) {
+                    console.error('Failed to parse member data:', e);
+                }
+            } else if (m.dataset.id) {
                 data = {
                     id: m.dataset.id,
                     member_no: m.dataset.memberNo || '',
@@ -4183,19 +4109,13 @@
                     date_of_birth: m.dataset.dob || '',
                     aadhaar_last4: m.dataset.aadhaar || '',
                     pan_last4: m.dataset.pan || '',
+                    aadhaar_no: m.dataset.aadhaar || '',
+                    pan_no: m.dataset.pan || '',
                     nominee_name: m.dataset.nominee || '',
                     occupation: m.dataset.occupation || '',
                     mcs_score: m.dataset.score || 500,
                     address: m.dataset.address || ''
                 };
-            } else if (m.getAttribute('data-member')) {
-                try {
-                    let raw = m.getAttribute('data-member');
-                    raw = raw.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-                    data = JSON.parse(raw);
-                } catch(e) {
-                    console.error('Failed to parse member data:', e);
-                }
             }
         } else if (typeof m === 'string') {
             try {
@@ -4210,7 +4130,7 @@
         const modal = document.getElementById('editCustomerModal');
         if (!modal) return;
         
-        const titleEl = document.getElementById('editModalTitle');
+        const titleEl = document.getElementById('editCustomerModalTitle');
         if (titleEl) titleEl.textContent = 'Edit Customer: ' + (data.member_no || '') + ' (' + (data.name || '') + ')';
         
         const formEl = document.getElementById('editMemberForm');
@@ -4221,21 +4141,69 @@
             if (el) el.value = val !== undefined && val !== null ? val : '';
         };
 
+        // Section 1: Account
         setVal('editMemberNo', data.member_no);
         setVal('editMemberName', data.name);
-        setVal('editMemberPhone', data.phone);
-        setVal('editMemberEmail', data.email);
         setVal('editMemberStatus', data.user_status || data.status || 'active');
         setVal('editMemberKycStatus', data.kyc_status || 'not_submitted');
         setVal('editMemberJoiningDate', data.created_at ? data.created_at.substring(0, 10) : '');
+
+        // Section 2: Parents & Personal
+        setVal('editParentName', data.parent_name);
+        setVal('editMotherName', data.mother_name);
+        setVal('editFatherName', data.father_name);
         setVal('editMemberDob', data.date_of_birth ? data.date_of_birth.substring(0, 10) : '');
-        setVal('editMemberAadhaar', data.aadhaar_last4);
-        setVal('editMemberPan', data.pan_last4);
-        setVal('editMemberNominee', data.nominee_name);
-        setVal('editMemberOccupation', data.occupation);
-        setVal('editMemberScore', data.mcs_score || 500);
-        setVal('editMemberAddress', data.address);
+        setVal('editMemberAge', data.age);
+        setVal('editBloodGroup', data.blood_group);
+        setVal('editQualification', data.qualification);
+        setVal('editMaritalStatus', data.marital_status || 'Married');
+
+        // Section 3: Contact
+        setVal('editMemberPhone', data.phone);
+        setVal('editMemberEmail', data.email);
         setVal('editMemberMpin', '');
+        setVal('editMemberAddress', data.address);
+        setVal('editPresentAddress', data.present_address);
+        setVal('editPincode', data.pincode);
+
+        // Section 4: Banking
+        setVal('editBankName', data.bank_name);
+        setVal('editBankAccountNo', data.bank_account_no);
+        setVal('editBankIfsc', data.bank_ifsc);
+        setVal('editBankBranch', data.bank_branch);
+        setVal('editBank2Name', data.bank2_name);
+        setVal('editBank2AccountNo', data.bank2_account_no);
+        setVal('editBank2Ifsc', data.bank2_ifsc);
+        setVal('editBank2Branch', data.bank2_branch);
+
+        // Section 5: Employment & Tax
+        setVal('editMemberOccupation', data.occupation);
+        setVal('editOfficeAddress', data.office_address);
+        setVal('editDesignationSalary', data.designation_salary);
+        setVal('editMemberAadhaar', data.aadhaar_no || data.aadhaar || data.aadhaar_last4);
+        setVal('editMemberPan', data.pan_no || data.pan || data.pan_last4);
+        setVal('editMemberScore', data.mcs_score || 500);
+        setVal('editRelativeMemberDetails', data.relative_member_details);
+
+        // Section 6: Nominee
+        setVal('editNomineeName', data.nominee_name);
+        setVal('editNomineeParent', data.nominee_parent);
+        setVal('editNomineeRelation', data.nominee_relation);
+        setVal('editNomineeAge', data.nominee_age);
+        setVal('editNomineeOccupation', data.nominee_occupation);
+        setVal('editNomineeAddress', data.nominee_address);
+
+        // Section 7: Introducers
+        setVal('editIntro1Name', data.intro1_name);
+        setVal('editIntro1Parent', data.intro1_parent);
+        setVal('editIntro1Account', data.intro1_account);
+        setVal('editIntro1Lf', data.intro1_lf);
+        setVal('editIntro1Address', data.intro1_address);
+        setVal('editIntro2Name', data.intro2_name);
+        setVal('editIntro2Parent', data.intro2_parent);
+        setVal('editIntro2Account', data.intro2_account);
+        setVal('editIntro2Lf', data.intro2_lf);
+        setVal('editIntro2Address', data.intro2_address);
 
         modal.style.display = 'flex';
         modal.style.zIndex = '99999';
@@ -4755,6 +4723,324 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ================= EDIT CUSTOMER / APPLICATION FORM DETAILS MODAL ================= -->
+    <div id="editCustomerModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); z-index: 99999; justify-content: center; align-items: center; padding: 20px;">
+        <div style="background: white; border-radius: 12px; width: 100%; max-width: 900px; max-height: 90vh; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+            <div style="background: linear-gradient(135deg, #0284c7, #0369a1); padding: 16px 22px; color: white; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="bi bi-pencil-square" style="font-size: 20px;"></i>
+                    <div>
+                        <h3 id="editCustomerModalTitle" style="margin: 0; font-size: 16px; font-weight: 800; color: white;">Edit Customer & Application Form</h3>
+                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #e0f2fe;">Update membership details, parents, banking, nominee, and introducer records</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeEditMemberModal()" style="background: none; border: none; color: white; font-size: 26px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+
+            <form id="editMemberForm" method="post" action="" style="padding: 22px; margin: 0; overflow-y: auto; flex: 1;">
+                @csrf
+
+                <!-- SECTION 1: ACCOUNT & STATUS -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-person-badge"></i> 1. Account & Membership Status
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1.5fr 1fr 1fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Member No <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="member_no" id="editMemberNo" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; font-weight: 700;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Customer Full Name <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="name" id="editMemberName" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; font-weight: 700;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Account Status <span style="color:#dc2626">*</span></label>
+                            <select name="status" id="editMemberStatus" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="active">Active</option>
+                                <option value="pending">Pending</option>
+                                <option value="suspended">Suspended</option>
+                                <option value="blocked">Blocked</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">KYC Status <span style="color:#dc2626">*</span></label>
+                            <select name="kyc_status" id="editMemberKycStatus" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="not_submitted">Not Submitted</option>
+                                <option value="pending">Pending</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Joining Date</label>
+                            <input type="date" name="created_at" id="editMemberJoiningDate" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 2: PARENTS & PERSONAL DETAILS -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-people-fill"></i> 2. Family & Personal Particulars
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">2(a). S/o, W/o, D/o</label>
+                            <input type="text" name="parent_name" id="editParentName" placeholder="Son / Wife / Daughter of..." style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">2(b). Mother’s Name</label>
+                            <input type="text" name="mother_name" id="editMotherName" placeholder="Mother's Full Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">2(c). Father’s Name</label>
+                            <input type="text" name="father_name" id="editFatherName" placeholder="Father's Full Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Date of Birth</label>
+                            <input type="date" name="date_of_birth" id="editMemberDob" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Age (Years)</label>
+                            <input type="number" name="age" id="editMemberAge" min="1" max="120" placeholder="e.g. 32" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Blood Group</label>
+                            <select name="blood_group" id="editBloodGroup" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="">Select</option>
+                                <option value="O+">O+</option>
+                                <option value="A+">A+</option>
+                                <option value="B+">B+</option>
+                                <option value="AB+">AB+</option>
+                                <option value="O-">O-</option>
+                                <option value="A-">A-</option>
+                                <option value="B-">B-</option>
+                                <option value="AB-">AB-</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Qualification</label>
+                            <input type="text" name="qualification" id="editQualification" placeholder="e.g. Graduate / HS" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Marital Status</label>
+                            <select name="marital_status" id="editMaritalStatus" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; background: white;">
+                                <option value="Married">Married</option>
+                                <option value="Single">Single</option>
+                                <option value="Widowed">Widowed</option>
+                                <option value="Divorced">Divorced</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 3: CONTACT & ADDRESSES -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-geo-alt"></i> 3. Contact & Addresses
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Mobile Phone <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="phone" id="editMemberPhone" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Email Address</label>
+                            <input type="email" name="email" id="editMemberEmail" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Reset MPIN (6-digit, optional)</label>
+                            <input type="password" name="mpin" id="editMemberMpin" maxlength="6" pattern="^[0-9]{6}$" placeholder="Leave blank to keep" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Permanent Address <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="address" id="editMemberAddress" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Present / Correspondence Address</label>
+                            <input type="text" name="present_address" id="editPresentAddress" placeholder="Present Address" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Pin Code</label>
+                            <input type="text" name="pincode" id="editPincode" placeholder="e.g. 781001" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 4: BANKING PARTICULARS (ALL BANKS) -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-bank"></i> 4. Banking Particulars (Multiple Banks)
+                    </div>
+                    <!-- Bank 1 -->
+                    <div style="margin-bottom: 10px;">
+                        <span style="font-size: 11px; font-weight: 700; color: #1e293b; display: block; margin-bottom: 4px;">Primary Bank Account</span>
+                        <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Bank Name</label>
+                                <input type="text" name="bank_name" id="editBankName" placeholder="e.g. State Bank of India" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Account Number</label>
+                                <input type="text" name="bank_account_no" id="editBankAccountNo" placeholder="Bank Account Number" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">IFSC Code</label>
+                                <input type="text" name="bank_ifsc" id="editBankIfsc" placeholder="e.g. SBIN0001234" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; text-transform: uppercase;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Branch</label>
+                                <input type="text" name="bank_branch" id="editBankBranch" placeholder="Branch Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Bank 2 -->
+                    <div>
+                        <span style="font-size: 11px; font-weight: 700; color: #1e293b; display: block; margin-bottom: 4px;">Secondary Bank Account (Optional)</span>
+                        <div style="display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 10px;">
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Bank 2 Name</label>
+                                <input type="text" name="bank2_name" id="editBank2Name" placeholder="e.g. HDFC / Axis Bank" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Account Number</label>
+                                <input type="text" name="bank2_account_no" id="editBank2AccountNo" placeholder="Account Number" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">IFSC Code</label>
+                                <input type="text" name="bank2_ifsc" id="editBank2Ifsc" placeholder="e.g. HDFC0001234" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; text-transform: uppercase;">
+                            </div>
+                            <div>
+                                <label style="font-size: 10.5px; font-weight: 600; color: #64748b;">Branch</label>
+                                <input type="text" name="bank2_branch" id="editBank2Branch" placeholder="Branch Name" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 5: EMPLOYMENT & TAX -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-briefcase"></i> 5. Employment, Tax & Score
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.2fr 2fr 1.5fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Employed In / Occupation</label>
+                            <input type="text" name="occupation" id="editMemberOccupation" placeholder="e.g. Govt / Business / Private" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Office Address</label>
+                            <input type="text" name="office_address" id="editOfficeAddress" placeholder="Office / Shop Address" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Designation & Salary Drawn</label>
+                            <input type="text" name="designation_salary" id="editDesignationSalary" placeholder="e.g. Executive, Rs. 35,000" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr; gap: 12px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Aadhaar Number</label>
+                            <input type="text" name="aadhaar" id="editMemberAadhaar" placeholder="12-digit Aadhaar" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">PAN Number</label>
+                            <input type="text" name="pan" id="editMemberPan" placeholder="ABCDE1234F" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; text-transform: uppercase;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">MCS Credit Score (300-900)</label>
+                            <input type="number" name="mcs_score" id="editMemberScore" min="300" max="900" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px; font-weight: 700;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Relative in Society (if any)</label>
+                            <input type="text" name="relative_member_details" id="editRelativeMemberDetails" placeholder="Name, Relation, A/c No." style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECTION 6: NOMINEE -->
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-person-heart"></i> 6. Nomination Clause
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1.2fr 1fr 1fr 0.8fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Full Name <span style="color:#dc2626">*</span></label>
+                            <input type="text" name="nominee_name" id="editNomineeName" required style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee S/o, W/o, D/o</label>
+                            <input type="text" name="nominee_parent" id="editNomineeParent" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Relationship</label>
+                            <input type="text" name="nominee_relation" id="editNomineeRelation" placeholder="e.g. Spouse / Son" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Age</label>
+                            <input type="number" name="nominee_age" id="editNomineeAge" min="1" max="120" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Occupation</label>
+                            <input type="text" name="nominee_occupation" id="editNomineeOccupation" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Nominee Address</label>
+                        <input type="text" name="nominee_address" id="editNomineeAddress" placeholder="Residential Address of Nominee" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                    </div>
+                </div>
+
+                <!-- SECTION 7: INTRODUCERS -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                    <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-people"></i> 7. Introducer Declarations
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                        <!-- Introducer 1 -->
+                        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: white;">
+                            <div style="font-size: 11.5px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">Introducer Member 1</div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <input type="text" name="intro1_name" id="editIntro1Name" placeholder="1. Full Name of Introducer" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input type="text" name="intro1_parent" id="editIntro1Parent" placeholder="S/o, W/o, D/o" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <input type="text" name="intro1_account" id="editIntro1Account" placeholder="Account No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                    <input type="text" name="intro1_lf" id="editIntro1Lf" placeholder="LF No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                </div>
+                                <input type="text" name="intro1_address" id="editIntro1Address" placeholder="Address" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                        <!-- Introducer 2 -->
+                        <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; background: white;">
+                            <div style="font-size: 11.5px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">Introducer Member 2</div>
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                <input type="text" name="intro2_name" id="editIntro2Name" placeholder="2. Full Name of Introducer" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input type="text" name="intro2_parent" id="editIntro2Parent" placeholder="S/o, W/o, D/o" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                    <input type="text" name="intro2_account" id="editIntro2Account" placeholder="Account No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                    <input type="text" name="intro2_lf" id="editIntro2Lf" placeholder="LF No." style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                </div>
+                                <input type="text" name="intro2_address" id="editIntro2Address" placeholder="Address" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FORM ACTIONS -->
+                <div style="display: flex; justify-content: flex-end; gap: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+                    <button type="button" onclick="closeEditMemberModal()" class="button secondary" style="padding: 8px 18px; font-size: 13px;">Cancel</button>
+                    <button type="submit" class="button" style="padding: 8px 22px; font-size: 13px; background: #0284c7; color: white; font-weight: 700;">
+                        <i class="bi bi-check-circle-fill"></i> Save & Update Customer Form
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

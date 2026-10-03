@@ -5,12 +5,59 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Services\{CreditScore, DepositCalculator, FinanceLedger, FinancialAutomation, LoanSchedule, MemberNotifier, ReceiptService, SequenceService, StaffPermissions, TransactionManager};
 use Carbon\Carbon;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth, DB, Hash, Schema, Storage, Validator};
 use Illuminate\Support\Str;
 
 class AdminController extends Controller
 {
+    private function ensureMemberSchema(): void
+    {
+        try {
+            Schema::table('members', function (Blueprint $table) {
+                if (!Schema::hasColumn('members', 'parent_name')) $table->string('parent_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'mother_name')) $table->string('mother_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'father_name')) $table->string('father_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'age')) $table->unsignedSmallInteger('age')->nullable();
+                if (!Schema::hasColumn('members', 'blood_group')) $table->string('blood_group', 10)->nullable();
+                if (!Schema::hasColumn('members', 'qualification')) $table->string('qualification', 120)->nullable();
+                if (!Schema::hasColumn('members', 'marital_status')) $table->string('marital_status', 30)->nullable();
+                if (!Schema::hasColumn('members', 'present_address')) $table->text('present_address')->nullable();
+                if (!Schema::hasColumn('members', 'pincode')) $table->string('pincode', 20)->nullable();
+                if (!Schema::hasColumn('members', 'bank_name')) $table->string('bank_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'bank_account_no')) $table->string('bank_account_no', 50)->nullable();
+                if (!Schema::hasColumn('members', 'bank_ifsc')) $table->string('bank_ifsc', 25)->nullable();
+                if (!Schema::hasColumn('members', 'bank_branch')) $table->string('bank_branch', 120)->nullable();
+                if (!Schema::hasColumn('members', 'bank2_name')) $table->string('bank2_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'bank2_account_no')) $table->string('bank2_account_no', 50)->nullable();
+                if (!Schema::hasColumn('members', 'bank2_ifsc')) $table->string('bank2_ifsc', 25)->nullable();
+                if (!Schema::hasColumn('members', 'bank2_branch')) $table->string('bank2_branch', 120)->nullable();
+                if (!Schema::hasColumn('members', 'office_address')) $table->text('office_address')->nullable();
+                if (!Schema::hasColumn('members', 'designation_salary')) $table->string('designation_salary', 150)->nullable();
+                if (!Schema::hasColumn('members', 'relative_member_details')) $table->string('relative_member_details', 255)->nullable();
+                if (!Schema::hasColumn('members', 'nominee_parent')) $table->string('nominee_parent', 150)->nullable();
+                if (!Schema::hasColumn('members', 'nominee_relation')) $table->string('nominee_relation', 80)->nullable();
+                if (!Schema::hasColumn('members', 'nominee_occupation')) $table->string('nominee_occupation', 120)->nullable();
+                if (!Schema::hasColumn('members', 'nominee_age')) $table->unsignedSmallInteger('nominee_age')->nullable();
+                if (!Schema::hasColumn('members', 'nominee_address')) $table->text('nominee_address')->nullable();
+                if (!Schema::hasColumn('members', 'intro1_name')) $table->string('intro1_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'intro1_parent')) $table->string('intro1_parent', 150)->nullable();
+                if (!Schema::hasColumn('members', 'intro1_account')) $table->string('intro1_account', 50)->nullable();
+                if (!Schema::hasColumn('members', 'intro1_lf')) $table->string('intro1_lf', 50)->nullable();
+                if (!Schema::hasColumn('members', 'intro1_address')) $table->text('intro1_address')->nullable();
+                if (!Schema::hasColumn('members', 'intro2_name')) $table->string('intro2_name', 150)->nullable();
+                if (!Schema::hasColumn('members', 'intro2_parent')) $table->string('intro2_parent', 150)->nullable();
+                if (!Schema::hasColumn('members', 'intro2_account')) $table->string('intro2_account', 50)->nullable();
+                if (!Schema::hasColumn('members', 'intro2_lf')) $table->string('intro2_lf', 50)->nullable();
+                if (!Schema::hasColumn('members', 'intro2_address')) $table->text('intro2_address')->nullable();
+                if (!Schema::hasColumn('members', 'aadhaar_no')) $table->string('aadhaar_no', 25)->nullable();
+                if (!Schema::hasColumn('members', 'pan_no')) $table->string('pan_no', 20)->nullable();
+            });
+        } catch (\Throwable $e) {
+            // Ignore schema migration conflicts
+        }
+    }
     private function staff(Request $request): void
     {
         abort_unless(in_array($request->user()->role, ['super_admin','president','manager','secretary','agent'], true), 403);
@@ -395,21 +442,57 @@ class AdminController extends Controller
     public function createAccount(Request $request)
     {
         $this->permit($request, 'account.create');
+        $this->ensureMemberSchema();
         $data = $request->validate([
             'member_source' => 'required|in:existing,new',
             'member_id' => 'nullable|required_if:member_source,existing|exists:members,id',
             'applicant_name' => 'nullable|required_if:member_source,new|string|max:120',
+            'parent_name' => 'nullable|string|max:150',
+            'mother_name' => 'nullable|string|max:150',
+            'father_name' => 'nullable|string|max:150',
+            'applicant_age' => 'nullable|integer|min:1|max:120',
+            'applicant_date_of_birth' => 'nullable|date',
+            'blood_group' => 'nullable|string|max:10',
+            'qualification' => 'nullable|string|max:120',
+            'marital_status' => 'nullable|string|max:30',
             'applicant_phone' => ['nullable','required_if:member_source,new','regex:/^[6-9][0-9]{9}$/','unique:users,phone'],
             'applicant_email' => 'nullable|email|max:255|unique:users,email',
             'applicant_mpin' => 'nullable|required_if:member_source,new|digits:6',
             'applicant_address' => 'nullable|required_if:member_source,new|string|max:1000',
-            'applicant_nominee' => 'nullable|required_if:member_source,new|string|max:120',
+            'present_address' => 'nullable|string|max:1000',
+            'pincode' => 'nullable|string|max:20',
+            'bank_name' => 'nullable|string|max:150',
+            'bank_account_no' => 'nullable|string|max:50',
+            'bank_ifsc' => 'nullable|string|max:25',
+            'bank_branch' => 'nullable|string|max:120',
+            'bank2_name' => 'nullable|string|max:150',
+            'bank2_account_no' => 'nullable|string|max:50',
+            'bank2_ifsc' => 'nullable|string|max:25',
+            'bank2_branch' => 'nullable|string|max:120',
             'applicant_occupation' => 'nullable|string|max:120',
-            'applicant_date_of_birth' => 'nullable|date',
-            'date_of_joining' => 'nullable|date',
-            'account_opening_date' => 'nullable|date',
+            'office_address' => 'nullable|string|max:1000',
+            'designation_salary' => 'nullable|string|max:150',
             'applicant_aadhaar' => 'nullable|required_if:member_source,new|digits:12',
             'applicant_pan' => ['nullable','regex:/^[A-Z]{5}[0-9]{4}[A-Z]$/'],
+            'relative_member_details' => 'nullable|string|max:255',
+            'applicant_nominee' => 'nullable|required_if:member_source,new|string|max:120',
+            'nominee_parent' => 'nullable|string|max:150',
+            'nominee_relation' => 'nullable|string|max:80',
+            'nominee_occupation' => 'nullable|string|max:120',
+            'nominee_age' => 'nullable|integer|min:1|max:120',
+            'nominee_address' => 'nullable|string|max:1000',
+            'intro1_name' => 'nullable|string|max:150',
+            'intro1_parent' => 'nullable|string|max:150',
+            'intro1_account' => 'nullable|string|max:50',
+            'intro1_lf' => 'nullable|string|max:50',
+            'intro1_address' => 'nullable|string|max:1000',
+            'intro2_name' => 'nullable|string|max:150',
+            'intro2_parent' => 'nullable|string|max:150',
+            'intro2_account' => 'nullable|string|max:50',
+            'intro2_lf' => 'nullable|string|max:50',
+            'intro2_address' => 'nullable|string|max:1000',
+            'date_of_joining' => 'nullable|date',
+            'account_opening_date' => 'nullable|date',
             'scheme_id' => 'required|exists:schemes,id',
             'opening_deposit' => 'required|numeric|min:1', 'share_count' => 'nullable|integer|min:1|max:100',
             'custom_interest_rate' => 'nullable|numeric|min:0|max:30',
@@ -480,16 +563,61 @@ class AdminController extends Controller
                 ]);
 
                 $memberNo = 'MS-'.$joiningDate->format('Y').'-'.str_pad((string) $user->id, 6, '0', STR_PAD_LEFT);
-                $memberId = DB::table('members')->insertGetId([
-                    'user_id' => $user->id, 'member_no' => $memberNo,
-                    'address' => $data['applicant_address'], 'nominee_name' => $data['applicant_nominee'],
+                $memberData = [
+                    'user_id' => $user->id,
+                    'member_no' => $memberNo,
+                    'address' => $data['applicant_address'],
+                    'present_address' => $data['present_address'] ?? $data['applicant_address'],
+                    'pincode' => $data['pincode'] ?? null,
+                    'nominee_name' => $data['applicant_nominee'],
+                    'nominee_parent' => $data['nominee_parent'] ?? null,
+                    'nominee_relation' => $data['nominee_relation'] ?? null,
+                    'nominee_occupation' => $data['nominee_occupation'] ?? null,
+                    'nominee_age' => !empty($data['nominee_age']) ? (int)$data['nominee_age'] : null,
+                    'nominee_address' => $data['nominee_address'] ?? null,
+                    'parent_name' => $data['parent_name'] ?? null,
+                    'mother_name' => $data['mother_name'] ?? null,
+                    'father_name' => $data['father_name'] ?? null,
+                    'age' => !empty($data['applicant_age']) ? (int)$data['applicant_age'] : null,
+                    'blood_group' => $data['blood_group'] ?? null,
+                    'qualification' => $data['qualification'] ?? null,
+                    'marital_status' => $data['marital_status'] ?? null,
+                    'bank_name' => $data['bank_name'] ?? null,
+                    'bank_account_no' => $data['bank_account_no'] ?? null,
+                    'bank_ifsc' => !empty($data['bank_ifsc']) ? strtoupper(trim($data['bank_ifsc'])) : null,
+                    'bank_branch' => $data['bank_branch'] ?? null,
+                    'bank2_name' => $data['bank2_name'] ?? null,
+                    'bank2_account_no' => $data['bank2_account_no'] ?? null,
+                    'bank2_ifsc' => !empty($data['bank2_ifsc']) ? strtoupper(trim($data['bank2_ifsc'])) : null,
+                    'bank2_branch' => $data['bank2_branch'] ?? null,
                     'occupation' => $data['applicant_occupation'] ?? null,
+                    'office_address' => $data['office_address'] ?? null,
+                    'designation_salary' => $data['designation_salary'] ?? null,
+                    'relative_member_details' => $data['relative_member_details'] ?? null,
+                    'intro1_name' => $data['intro1_name'] ?? null,
+                    'intro1_parent' => $data['intro1_parent'] ?? null,
+                    'intro1_account' => $data['intro1_account'] ?? null,
+                    'intro1_lf' => $data['intro1_lf'] ?? null,
+                    'intro1_address' => $data['intro1_address'] ?? null,
+                    'intro2_name' => $data['intro2_name'] ?? null,
+                    'intro2_parent' => $data['intro2_parent'] ?? null,
+                    'intro2_account' => $data['intro2_account'] ?? null,
+                    'intro2_lf' => $data['intro2_lf'] ?? null,
+                    'intro2_address' => $data['intro2_address'] ?? null,
                     'date_of_birth' => $data['applicant_date_of_birth'] ?? null,
-                    'aadhaar_last4' => substr($data['applicant_aadhaar'], -4),
-                    'pan_last4' => isset($data['applicant_pan']) ? substr($data['applicant_pan'], -4) : null,
-                    'kyc_status' => 'not_submitted', 'mcs_score' => 500,
-                    'created_at' => $joiningDate, 'updated_at' => $joiningDate,
-                ]);
+                    'aadhaar_no' => !empty($data['applicant_aadhaar']) ? preg_replace('/\D/', '', $data['applicant_aadhaar']) : null,
+                    'aadhaar_last4' => !empty($data['applicant_aadhaar']) ? substr(preg_replace('/\D/', '', $data['applicant_aadhaar']), -4) : null,
+                    'pan_no' => !empty($data['applicant_pan']) ? strtoupper(trim($data['applicant_pan'])) : null,
+                    'pan_last4' => !empty($data['applicant_pan']) ? substr(strtoupper(trim($data['applicant_pan'])), -4) : null,
+                    'kyc_status' => 'not_submitted',
+                    'mcs_score' => 500,
+                    'created_at' => $joiningDate,
+                    'updated_at' => $joiningDate,
+                ];
+
+                $existingCols = Schema::getColumnListing('members');
+                $memberId = DB::table('members')->insertGetId(array_intersect_key($memberData, array_flip($existingCols)));
+
                 $this->audit($request, 'member.created_by_staff', 'member', $memberId, null, [
                     'member_no' => $memberNo, 'name' => $data['applicant_name'],
                     'phone' => $data['applicant_phone'], 'status' => 'pending', 'kyc_status' => 'not_submitted',
@@ -2664,7 +2792,13 @@ class AdminController extends Controller
 
     public function updateMember(Request $request, int $id)
     {
-        $this->permit($request, 'member.approve');
+        $this->ensureMemberSchema();
+        if (!StaffPermissions::allows($request->user(), 'member.approve') &&
+            !StaffPermissions::allows($request->user(), 'account.create') &&
+            !in_array($request->user()->role, ['super_admin','president','manager','secretary'], true)) {
+            abort(403, 'Unauthorized to edit customer details');
+        }
+
         $member = DB::table('members')->where('id', $id)->firstOrFail();
         $user = DB::table('users')->where('id', $member->user_id)->firstOrFail();
 
@@ -2673,16 +2807,58 @@ class AdminController extends Controller
             'name' => 'required|string|max:120',
             'phone' => 'required|string|max:20|unique:users,phone,' . $user->id,
             'email' => 'nullable|email|max:120|unique:users,email,' . $user->id,
-            'status' => 'required|in:active,pending,suspended,blocked',
+            'status' => 'nullable|in:active,pending,suspended,blocked',
             'mpin' => 'nullable|digits:6',
-            'address' => 'required|string|max:1000',
-            'nominee_name' => 'required|string|max:120',
-            'occupation' => 'nullable|string|max:120',
-            'date_of_birth' => 'nullable|date',
             'created_at' => 'nullable|date',
-            'aadhaar' => 'nullable|string|max:20',
+            // Applicant Particulars
+            'parent_name' => 'nullable|string|max:150',
+            'mother_name' => 'nullable|string|max:150',
+            'father_name' => 'nullable|string|max:150',
+            'age' => 'nullable|integer|min:1|max:120',
+            'date_of_birth' => 'nullable|date',
+            'blood_group' => 'nullable|string|max:10',
+            'qualification' => 'nullable|string|max:120',
+            'marital_status' => 'nullable|string|max:30',
+            // Contact & Addresses
+            'address' => 'nullable|string|max:1000',
+            'present_address' => 'nullable|string|max:1000',
+            'pincode' => 'nullable|string|max:20',
+            // Banking Particulars (Multiple Banks Support)
+            'bank_name' => 'nullable|string|max:150',
+            'bank_account_no' => 'nullable|string|max:50',
+            'bank_ifsc' => 'nullable|string|max:25',
+            'bank_branch' => 'nullable|string|max:120',
+            'bank2_name' => 'nullable|string|max:150',
+            'bank2_account_no' => 'nullable|string|max:50',
+            'bank2_ifsc' => 'nullable|string|max:25',
+            'bank2_branch' => 'nullable|string|max:120',
+            // Employment & Tax
+            'occupation' => 'nullable|string|max:120',
+            'office_address' => 'nullable|string|max:1000',
+            'designation_salary' => 'nullable|string|max:150',
+            'aadhaar' => 'nullable|string|max:25',
             'pan' => 'nullable|string|max:20',
-            'kyc_status' => 'required|in:not_submitted,pending,approved,rejected',
+            'relative_member_details' => 'nullable|string|max:255',
+            // Nominee
+            'nominee_name' => 'nullable|string|max:120',
+            'nominee_parent' => 'nullable|string|max:150',
+            'nominee_relation' => 'nullable|string|max:80',
+            'nominee_occupation' => 'nullable|string|max:120',
+            'nominee_age' => 'nullable|integer|min:1|max:120',
+            'nominee_address' => 'nullable|string|max:1000',
+            // Introducers
+            'intro1_name' => 'nullable|string|max:150',
+            'intro1_parent' => 'nullable|string|max:150',
+            'intro1_account' => 'nullable|string|max:50',
+            'intro1_lf' => 'nullable|string|max:50',
+            'intro1_address' => 'nullable|string|max:1000',
+            'intro2_name' => 'nullable|string|max:150',
+            'intro2_parent' => 'nullable|string|max:150',
+            'intro2_account' => 'nullable|string|max:50',
+            'intro2_lf' => 'nullable|string|max:50',
+            'intro2_address' => 'nullable|string|max:1000',
+            // KYC & Score
+            'kyc_status' => 'nullable|in:not_submitted,pending,approved,rejected',
             'mcs_score' => 'nullable|integer|min:300|max:900',
         ]);
 
@@ -2691,7 +2867,7 @@ class AdminController extends Controller
                 'name' => $data['name'],
                 'phone' => $data['phone'],
                 'email' => $data['email'] ?? null,
-                'status' => $data['status'],
+                'status' => $data['status'] ?? $user->status ?? 'active',
                 'updated_at' => now(),
             ];
             if (!empty($data['mpin'])) {
@@ -2705,11 +2881,46 @@ class AdminController extends Controller
 
             $memberUpdates = [
                 'member_no' => $data['member_no'],
-                'address' => $data['address'],
-                'nominee_name' => $data['nominee_name'],
-                'occupation' => $data['occupation'] ?? null,
+                'address' => $data['address'] ?? $member->address,
+                'present_address' => $data['present_address'] ?? ($data['address'] ?? $member->address),
+                'pincode' => $data['pincode'] ?? $member->pincode,
+                'parent_name' => $data['parent_name'] ?? null,
+                'mother_name' => $data['mother_name'] ?? null,
+                'father_name' => $data['father_name'] ?? null,
+                'age' => !empty($data['age']) ? (int)$data['age'] : null,
                 'date_of_birth' => $data['date_of_birth'] ?? null,
-                'kyc_status' => $data['kyc_status'],
+                'blood_group' => $data['blood_group'] ?? null,
+                'qualification' => $data['qualification'] ?? null,
+                'marital_status' => $data['marital_status'] ?? null,
+                'bank_name' => $data['bank_name'] ?? null,
+                'bank_account_no' => $data['bank_account_no'] ?? null,
+                'bank_ifsc' => !empty($data['bank_ifsc']) ? strtoupper(trim($data['bank_ifsc'])) : null,
+                'bank_branch' => $data['bank_branch'] ?? null,
+                'bank2_name' => $data['bank2_name'] ?? null,
+                'bank2_account_no' => $data['bank2_account_no'] ?? null,
+                'bank2_ifsc' => !empty($data['bank2_ifsc']) ? strtoupper(trim($data['bank2_ifsc'])) : null,
+                'bank2_branch' => $data['bank2_branch'] ?? null,
+                'occupation' => $data['occupation'] ?? null,
+                'office_address' => $data['office_address'] ?? null,
+                'designation_salary' => $data['designation_salary'] ?? null,
+                'relative_member_details' => $data['relative_member_details'] ?? null,
+                'nominee_name' => $data['nominee_name'] ?? $member->nominee_name,
+                'nominee_parent' => $data['nominee_parent'] ?? null,
+                'nominee_relation' => $data['nominee_relation'] ?? null,
+                'nominee_occupation' => $data['nominee_occupation'] ?? null,
+                'nominee_age' => !empty($data['nominee_age']) ? (int)$data['nominee_age'] : null,
+                'nominee_address' => $data['nominee_address'] ?? null,
+                'intro1_name' => $data['intro1_name'] ?? null,
+                'intro1_parent' => $data['intro1_parent'] ?? null,
+                'intro1_account' => $data['intro1_account'] ?? null,
+                'intro1_lf' => $data['intro1_lf'] ?? null,
+                'intro1_address' => $data['intro1_address'] ?? null,
+                'intro2_name' => $data['intro2_name'] ?? null,
+                'intro2_parent' => $data['intro2_parent'] ?? null,
+                'intro2_account' => $data['intro2_account'] ?? null,
+                'intro2_lf' => $data['intro2_lf'] ?? null,
+                'intro2_address' => $data['intro2_address'] ?? null,
+                'kyc_status' => $data['kyc_status'] ?? $member->kyc_status ?? 'not_submitted',
                 'updated_at' => now(),
             ];
             if (!empty($data['created_at'])) {
@@ -2718,19 +2929,35 @@ class AdminController extends Controller
             if (isset($data['mcs_score'])) {
                 $memberUpdates['mcs_score'] = (int) $data['mcs_score'];
             }
-            if (!empty($data['aadhaar'])) {
-                $cleanAadhaar = preg_replace('/\D/', '', $data['aadhaar']);
-                $memberUpdates['aadhaar_last4'] = substr($cleanAadhaar, -4);
+            if (isset($data['aadhaar'])) {
+                $trimmedAadhaar = trim($data['aadhaar']);
+                if ($trimmedAadhaar !== '') {
+                    $cleanAadhaar = preg_replace('/\s+/', '', $trimmedAadhaar);
+                    $memberUpdates['aadhaar_no'] = $cleanAadhaar;
+                    $memberUpdates['aadhaar_last4'] = substr($cleanAadhaar, -4);
+                } else {
+                    $memberUpdates['aadhaar_no'] = null;
+                    $memberUpdates['aadhaar_last4'] = null;
+                }
             }
-            if (!empty($data['pan'])) {
-                $cleanPan = strtoupper(trim($data['pan']));
-                $memberUpdates['pan_last4'] = substr($cleanPan, -4);
+            if (isset($data['pan'])) {
+                $trimmedPan = trim($data['pan']);
+                if ($trimmedPan !== '') {
+                    $cleanPan = strtoupper($trimmedPan);
+                    $memberUpdates['pan_no'] = $cleanPan;
+                    $memberUpdates['pan_last4'] = substr($cleanPan, -4);
+                } else {
+                    $memberUpdates['pan_no'] = null;
+                    $memberUpdates['pan_last4'] = null;
+                }
             }
             if ($data['kyc_status'] === 'approved' && $member->kyc_status !== 'approved') {
                 $memberUpdates['approved_at'] = now();
                 $memberUpdates['approved_by'] = $request->user()?->id ?: 1;
             }
-            DB::table('members')->where('id', $member->id)->update($memberUpdates);
+
+            $existingCols = Schema::getColumnListing('members');
+            DB::table('members')->where('id', $member->id)->update(array_intersect_key($memberUpdates, array_flip($existingCols)));
 
             $this->audit($request, 'member.updated', 'member', $member->id, null, [
                 'member_no' => $data['member_no'],
@@ -2741,7 +2968,7 @@ class AdminController extends Controller
             ]);
         });
 
-        return back()->with('ok', 'Customer ' . $data['member_no'] . ' (' . $data['name'] . ') updated successfully.');
+        return back()->with('ok', 'Customer ' . $data['member_no'] . ' (' . $data['name'] . ') application form details updated successfully.');
     }
 
     public function deleteMember(Request $request, int $id)
