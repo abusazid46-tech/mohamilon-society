@@ -582,9 +582,13 @@
                 <span class="part-label">Are you an Income Tax Assessee:</span>
                 <span class="part-fill" style="max-width: 80px;">{{ ($member->pan_no || $member->pan_last4) ? 'Yes' : 'No' }}</span>
                 <span class="part-label">PAN No.:</span>
-                <span class="part-fill" style="max-width: 160px;">{{ $member->pan_no ?: ($member->pan_last4 ?: '—') }}</span>
+                <span class="part-fill" style="max-width: 160px;">{{ strtoupper($member->pan_no ?: ($member->pan_last4 ?: '—')) }}</span>
                 <span class="part-label">Aadhaar No.:</span>
-                <span class="part-fill">{{ $member->aadhaar_no ?: ($member->aadhaar_last4 ?: '—') }}</span>
+                @php
+                    $rawAadhaar = preg_replace('/\s+/', '', (string)($member->aadhaar_no ?: $member->aadhaar_last4));
+                    $fmtAadhaar = ($rawAadhaar && strlen($rawAadhaar) === 12) ? implode(' ', str_split($rawAadhaar, 4)) : ($rawAadhaar ?: '—');
+                @endphp
+                <span class="part-fill">{{ $fmtAadhaar }}</span>
             </div>
 
             <div class="part-row">

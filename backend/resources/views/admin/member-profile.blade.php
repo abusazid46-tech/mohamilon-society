@@ -210,8 +210,12 @@
                 <div class="field-item"><label>Employed In / Profession</label><div>{{ $member->occupation ?: 'Not provided' }}</div></div>
                 <div class="field-item"><label>Office Address</label><div>{{ $member->office_address ?: 'Not provided' }}</div></div>
                 <div class="field-item"><label>Designation & Salary Drawn</label><div>{{ $member->designation_salary ?: 'Not provided' }}</div></div>
-                <div class="field-item"><label>Aadhaar Number</label><div>{{ $member->aadhaar_no ?: ($member->aadhaar_last4 ?: 'Not submitted') }}</div></div>
-                <div class="field-item"><label>PAN Number</label><div>{{ $member->pan_no ?: ($member->pan_last4 ?: 'Not submitted') }}</div></div>
+                @php
+                    $rawAadhaar1 = preg_replace('/\s+/', '', (string)($member->aadhaar_no ?: $member->aadhaar_last4));
+                    $fmtAadhaar1 = ($rawAadhaar1 && strlen($rawAadhaar1) === 12) ? implode(' ', str_split($rawAadhaar1, 4)) : ($rawAadhaar1 ?: 'Not submitted');
+                @endphp
+                <div class="field-item"><label>Aadhaar Number</label><div>{{ $fmtAadhaar1 }}</div></div>
+                <div class="field-item"><label>PAN Number</label><div>{{ strtoupper($member->pan_no ?: ($member->pan_last4 ?: 'Not submitted')) }}</div></div>
                 <div class="field-item"><label>Relative Member in Society</label><div>{{ $member->relative_member_details ?: 'None' }}</div></div>
             </div>
         </div>
@@ -258,8 +262,12 @@
         <div class="panel-card">
             <h2>KYC Status & Identification Details <small>Overall Status: <span class="badge {{ $member->kyc_status }}">{{ str_replace('_', ' ', $member->kyc_status) }}</span></small></h2>
             <div class="field-grid" style="margin-bottom:20px">
-                <div class="field-item"><label>Aadhaar Number</label><div>{{ $member->aadhaar_no ?: ($member->aadhaar_last4 ?: 'Not submitted') }}</div></div>
-                <div class="field-item"><label>PAN Number</label><div>{{ $member->pan_no ?: ($member->pan_last4 ?: 'Not submitted') }}</div></div>
+                @php
+                    $rawAadhaar2 = preg_replace('/\s+/', '', (string)($member->aadhaar_no ?: $member->aadhaar_last4));
+                    $fmtAadhaar2 = ($rawAadhaar2 && strlen($rawAadhaar2) === 12) ? implode(' ', str_split($rawAadhaar2, 4)) : ($rawAadhaar2 ?: 'Not submitted');
+                @endphp
+                <div class="field-item"><label>Aadhaar Number</label><div>{{ $fmtAadhaar2 }}</div></div>
+                <div class="field-item"><label>PAN Number</label><div>{{ strtoupper($member->pan_no ?: ($member->pan_last4 ?: 'Not submitted')) }}</div></div>
                 <div class="field-item"><label>Approval Status</label><div><span class="badge {{ $member->kyc_status }}">{{ strtoupper(str_replace('_', ' ', $member->kyc_status)) }}</span></div></div>
             </div>
 

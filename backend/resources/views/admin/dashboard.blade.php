@@ -1701,8 +1701,12 @@
                         <td><b>{{ $m->name }}</b></td>
                         <td>{{ $m->email ?: 'N/A' }}</td>
                         <td>{{ $m->phone }}</td>
-                        <td>{{ $m->aadhaar_no ?: ($m->aadhaar_last4 ?: '-') }}</td>
-                        <td>{{ $m->pan_no ?: ($m->pan_last4 ?: '-') }}</td>
+                        @php
+                            $rowAadhaar = preg_replace('/\s+/', '', (string)($m->aadhaar_no ?: $m->aadhaar_last4));
+                            $fmtRowAadhaar = ($rowAadhaar && strlen($rowAadhaar) === 12) ? implode(' ', str_split($rowAadhaar, 4)) : ($rowAadhaar ?: '-');
+                        @endphp
+                        <td>{{ $fmtRowAadhaar }}</td>
+                        <td>{{ strtoupper($m->pan_no ?: ($m->pan_last4 ?: '-')) }}</td>
                         <td style="max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ $m->address ?: '-' }}</td>
                         <td>{{ $m->date_of_birth ? date('d-m-Y', strtotime($m->date_of_birth)) : '-' }}</td>
                         <td>{{ date('d-m-Y', strtotime($m->created_at ?? 'now')) }}</td>
