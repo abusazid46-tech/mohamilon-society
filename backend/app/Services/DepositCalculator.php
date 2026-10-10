@@ -8,7 +8,10 @@ use Illuminate\Support\Facades\DB;
 final class DepositCalculator
 {
     /**
-     * Calculates Fixed Deposit (FD) maturity date, profit, and maturity amount (Section 4).
+     * Calculates Fixed Deposit (FD) maturity date, profit, and maturity amount using Simple Interest.
+     * Formula:
+     * Interest = Principal * (Annual Rate / 100) * (Tenure in Months / 12)
+     * Maturity Amount = Principal + Interest
      */
     public static function calculateFd(
         float $principal,
@@ -19,10 +22,10 @@ final class DepositCalculator
         $startDate = Carbon::parse($openingDate ?: today());
         $maturityDate = $startDate->copy()->addMonthsNoOverflow($tenureMonths);
 
-        // Standard quarterly compounding formula: A = P * (1 + r/400)^(4 * (t/12))
+        // Simple interest formula: Interest = P * (r / 100) * (t / 12)
         $t = $tenureMonths / 12;
-        $maturityAmount = round($principal * pow(1 + ($annualRate / 400), 4 * $t), 2);
-        $profit = round($maturityAmount - $principal, 2);
+        $profit = round($principal * ($annualRate / 100) * $t, 2);
+        $maturityAmount = round($principal + $profit, 2);
 
         return [
             'principal' => round($principal, 2),

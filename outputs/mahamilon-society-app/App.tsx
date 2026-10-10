@@ -16,7 +16,8 @@ import {
   View,
   ActivityIndicator,
   RefreshControl,
-  Linking
+  Linking,
+  Modal
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Scheme } from "./src/domain";
@@ -278,9 +279,9 @@ function AppContent() {
               <LoanScreen form={loanForm} setForm={setLoanForm} submitLoan={submitLoan} loans={dashboard.loans} installments={dashboard.installments??[]} repayments={dashboard.repayments??[]} profile={dashboard.profile} respondToOffer={respondToOffer} submitRepayment={submitLoanRepayment} />
             )}
             {activeTab === "kyc" && (
-              <KycScreen kycStatus={dashboard.profile.kyc_status} submitKyc={submitKyc} />
+              <KycScreen kycStatus={dashboard.profile.kyc_status} rejectionNote={dashboard.profile.kyc_rejection_note} submitKyc={submitKyc} />
             )}
-            {activeTab === "profile" && <ProfileScreen profile={dashboard.profile} />}
+            {activeTab === "profile" && <ProfileScreen profile={dashboard.profile} dashboard={dashboard} />}
             {loading && dashboard.profile.name==="" && <ActivityIndicator size="large" color={colors.navy} />}
           </ScrollView>
           <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -510,27 +511,70 @@ function MemberHeader({ profile, onLogout }: { profile: Dashboard["profile"]; on
 function HomeScreen({
   setActiveTab,
   sendLocalNotification,
-  dashboard
-  ,readNotification
+  dashboard,
+  readNotification
 }: {
   setActiveTab: (tab: Tab) => void;
   sendLocalNotification: () => void;
   dashboard: Dashboard;
-  readNotification: (id:number)=>void;
+  readNotification: (id: number) => void;
 }) {
+  const [selectedReceipt, setSelectedReceipt] = useState<any | null>(null);
+
   return (
     <>
+      {dashboard.profile.kyc_status === "rejected" && (
+        <View style={styles.kycBanner}>
+          <Ionicons name="alert-circle" size={24} color={colors.red} />
+          <View style={styles.kycBannerCopy}>
+            <Text style={styles.kycBannerTitle}>KYC Verification Rejected</Text>
+            <Text style={styles.kycBannerText}>
+              {dashboard.profile.kyc_rejection_note || "Document was rejected during office review. Please re-upload a clear copy."}
+            </Text>
+            <Pressable style={styles.kycReuploadBtn} onPress={() => setActiveTab("kyc")}>
+              <Text style={styles.kycReuploadBtnText}>Re-Upload Documents</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <View style={styles.balancePanel}>
-        <Text style={styles.balanceLabel}>Savings balance</Text>
-        <Text style={styles.balanceValue}>₹{Number(dashboard.profile.total_balance).toLocaleString("en-IN",{minimumFractionDigits:2})}</Text>
-        <Text style={styles.balanceHint}>Updated from the live society ledger</Text>
+        <Text style={styles.balanceLabel}>Total Society Balance</Text>
+        <Text style={styles.balanceValue}>
+          ₹{Number(dashboard.profile.total_balance).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+        </Text>
+        <Text style={styles.balanceHint}>Updated from live society ledger</Text>
+      </View>
+
+      <View style={styles.schemeRow}>
+        <View style={styles.schemeMiniCard}>
+          <Ionicons name="wallet-outline" size={18} color={colors.navy} />
+          <Text style={styles.schemeMiniLabel}>Savings</Text>
+          <Text style={styles.schemeMiniVal}>
+            ₹{Number(dashboard.profile.savings_balance ?? dashboard.profile.total_balance).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+          </Text>
+        </View>
+        <View style={styles.schemeMiniCard}>
+          <Ionicons name="lock-closed-outline" size={18} color="#087443" />
+          <Text style={styles.schemeMiniLabel}>Fixed (FD)</Text>
+          <Text style={[styles.schemeMiniVal, { color: "#087443" }]}>
+            ₹{Number(dashboard.profile.fd_balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+          </Text>
+        </View>
+        <View style={styles.schemeMiniCard}>
+          <Ionicons name="repeat-outline" size={18} color={colors.red} />
+          <Text style={styles.schemeMiniLabel}>Recurring (RD)</Text>
+          <Text style={[styles.schemeMiniVal, { color: colors.red }]}>
+            ₹{Number(dashboard.profile.rd_balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 0 })}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.metricGrid}>
-        <MetricCard icon="trending-up-outline" label="Total balance" value={`₹${Number(dashboard.profile.total_balance).toLocaleString("en-IN")}`} />
-        <MetricCard icon="albums-outline" label="Accounts" value={String(dashboard.profile.active_accounts)} />
-        <MetricCard icon="shield-checkmark-outline" label="KYC" value={dashboard.profile.kyc_status.replaceAll("_"," ")} />
-        <MetricCard icon="speedometer-outline" label="MCS score" value={String(dashboard.profile.mcs_score)} />
+        <MetricCard icon="albums-outline" label="Active accounts" value={String(dashboard.profile.active_accounts)} />
+        <MetricCard icon="shield-checkmark-outline" label="KYC status" value={dashboard.profile.kyc_status.replaceAll("_", " ")} />
+        <MetricCard icon="speedometer-outline" label="MCS score" value={`${dashboard.profile.mcs_score} / 900`} />
+        <MetricCard icon="cash-outline" label="Max loan (85%)" value={`₹${Number(dashboard.profile.maximum_loan).toLocaleString("en-IN")}`} />
       </View>
 
       <View style={styles.quickActions}>
@@ -539,13 +583,75 @@ function HomeScreen({
         <QuickAction icon="shield-outline" label="Update KYC" onPress={() => setActiveTab("kyc")} />
       </View>
 
-      <Panel title="Recent Ledger" icon="receipt-outline">
-        {dashboard.ledger.length===0?<Text style={styles.helperText}>No ledger entries yet.</Text>:dashboard.ledger.map((item:any) => (
-          <InfoRow key={item.id} label={`${item.description} | ${new Date(item.created_at).toLocaleDateString()}`} value={`₹${item.amount} | ${item.status}`} />
-        ))}
+      <Panel title="Official Payment Receipts" icon="receipt-outline">
+        {!dashboard.receipts || dashboard.receipts.length === 0 ? (
+          <Text style={styles.helperText}>No payment receipts issued yet.</Text>
+        ) : (
+          dashboard.receipts.slice(0, 5).map((r: any) => (
+            <Pressable key={r.id} style={styles.receiptItem} onPress={() => setSelectedReceipt(r)}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.receiptNo}>{r.receipt_no}</Text>
+                <Text style={styles.receiptCategory}>
+                  {String(r.category).replaceAll("_", " ").toUpperCase()} · {String(r.payment_mode).toUpperCase()}
+                </Text>
+                <Text style={styles.receiptDate}>{new Date(r.created_at).toLocaleDateString()}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={styles.receiptAmount}>
+                  ₹{Number(r.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </Text>
+                <View style={styles.receiptViewBadge}>
+                  <Text style={styles.receiptViewText}>VIEW</Text>
+                </View>
+              </View>
+            </Pressable>
+          ))
+        )}
       </Panel>
 
-      <NotificationList sendLocalNotification={sendLocalNotification} notifications={dashboard.notifications??[]} readNotification={readNotification} />
+      <Modal visible={selectedReceipt !== null} transparent animationType="slide" onRequestClose={() => setSelectedReceipt(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.receiptModalCard}>
+            <View style={styles.receiptModalHeader}>
+              <Ionicons name="document-text-outline" size={24} color={colors.navy} />
+              <Text style={styles.receiptModalTitle}>Payment Receipt</Text>
+              <Pressable onPress={() => setSelectedReceipt(null)} style={{ padding: 4 }}>
+                <Ionicons name="close" size={24} color={colors.ink} />
+              </Pressable>
+            </View>
+            <View style={styles.receiptModalDivider} />
+            {selectedReceipt && (
+              <>
+                <InfoRow label="Receipt No" value={selectedReceipt.receipt_no} emphasis />
+                <InfoRow label="Member" value={`${dashboard.profile.name} (${dashboard.profile.member_no})`} />
+                <InfoRow label="Category" value={String(selectedReceipt.category).replaceAll("_", " ").toUpperCase()} />
+                <InfoRow label="Amount Paid" value={`₹${Number(selectedReceipt.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} emphasis />
+                <InfoRow label="Payment Mode" value={String(selectedReceipt.payment_mode).toUpperCase()} />
+                <InfoRow label="Date & Time" value={new Date(selectedReceipt.created_at).toLocaleString()} />
+                {selectedReceipt.notes ? <InfoRow label="Reference / Notes" value={selectedReceipt.notes} /> : null}
+                <Text style={styles.receiptModalFooter}>Official Mahamilon Society Digital Receipt</Text>
+              </>
+            )}
+            <ActionButton label="Close Receipt" icon="checkmark-outline" onPress={() => setSelectedReceipt(null)} />
+          </View>
+        </View>
+      </Modal>
+
+      <Panel title="Recent Ledger" icon="list-outline">
+        {dashboard.ledger.length === 0 ? (
+          <Text style={styles.helperText}>No ledger entries yet.</Text>
+        ) : (
+          dashboard.ledger.map((item: any) => (
+            <InfoRow
+              key={item.id}
+              label={`${item.description} | ${new Date(item.created_at).toLocaleDateString()}`}
+              value={`₹${item.amount} | ${item.status}`}
+            />
+          ))
+        )}
+      </Panel>
+
+      <NotificationList sendLocalNotification={sendLocalNotification} notifications={dashboard.notifications ?? []} readNotification={readNotification} />
     </>
   );
 }
@@ -715,52 +821,117 @@ function LoanScreen({
   );
 }
 
-function KycScreen({kycStatus,submitKyc}:{kycStatus:string;submitKyc:(type:"aadhaar"|"pan"|"photo"|"address_proof")=>void}) {
+function KycScreen({
+  kycStatus,
+  rejectionNote,
+  submitKyc
+}: {
+  kycStatus: string;
+  rejectionNote?: string | null;
+  submitKyc: (type: "aadhaar" | "pan" | "photo" | "address_proof") => void;
+}) {
   return (
     <>
+      {kycStatus === "rejected" && (
+        <View style={styles.kycBanner}>
+          <Ionicons name="alert-circle" size={24} color={colors.red} />
+          <View style={styles.kycBannerCopy}>
+            <Text style={styles.kycBannerTitle}>KYC Verification Rejected</Text>
+            <Text style={styles.kycBannerText}>
+              {rejectionNote || "Document was rejected during office verification. Please re-upload clear photos or documents."}
+            </Text>
+          </View>
+        </View>
+      )}
+
       <Panel title="KYC Status" icon="shield-checkmark-outline">
-        <InfoRow label="Current status" value={kycStatus.replaceAll("_"," ")} emphasis />
+        <InfoRow label="Current status" value={kycStatus.replaceAll("_", " ")} emphasis />
         <InfoRow label="Verification method" value="Manual society office review" />
         <InfoRow label="Required documents" value="Aadhaar, PAN, photo, address proof" />
       </Panel>
 
       <Panel title="Upload KYC Documents" icon="id-card-outline">
         <Text style={styles.helperText}>PDF, JPG or PNG up to 5 MB. Documents are encrypted at rest and reviewed by authorized staff.</Text>
-        <ActionButton label="Upload Aadhaar" icon="cloud-upload-outline" onPress={()=>submitKyc("aadhaar")} />
-        <ActionButton label="Upload PAN" icon="cloud-upload-outline" onPress={()=>submitKyc("pan")} />
-        <ActionButton label="Upload Photo" icon="camera-outline" onPress={()=>submitKyc("photo")} />
-        <ActionButton label="Upload Address Proof" icon="document-outline" onPress={()=>submitKyc("address_proof")} />
+        <ActionButton label="Upload Aadhaar" icon="cloud-upload-outline" onPress={() => submitKyc("aadhaar")} />
+        <ActionButton label="Upload PAN" icon="cloud-upload-outline" onPress={() => submitKyc("pan")} />
+        <ActionButton label="Upload Photo" icon="camera-outline" onPress={() => submitKyc("photo")} />
+        <ActionButton label="Upload Address Proof" icon="document-outline" onPress={() => submitKyc("address_proof")} />
       </Panel>
     </>
   );
 }
 
-function ProfileScreen({profile}:{profile:Dashboard["profile"]}) {
+function ProfileScreen({ profile, dashboard }: { profile: Dashboard["profile"]; dashboard: Dashboard }) {
+  const activeLoans = dashboard.loans.filter(l => ["approved", "disbursed"].includes(l.status));
+  const outstandingLoan = activeLoans.reduce((sum, l) => sum + Number(l.outstanding_principal ?? 0), 0);
+
   return (
     <>
-      <Panel title="Member Profile" icon="person-circle-outline">
+      <Panel title="Digital Membership Card" icon="id-card-outline">
+        <LinearGradient colors={[colors.navyDark, colors.navy, "#071c3e"]} style={styles.idCard}>
+          <View style={styles.idCardHeader}>
+            <Image source={require("./assets/mahamilon-logo.png")} style={styles.idCardLogo} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.idCardSociety}>MAHAMILON SOCIETY</Text>
+              <Text style={styles.idCardSub}>Member Identification</Text>
+            </View>
+          </View>
+          <View style={styles.idCardBody}>
+            <View style={styles.idCardInfo}>
+              <Text style={styles.idCardMemberName}>{profile.name}</Text>
+              <Text style={styles.idCardMemberNo}>{profile.member_no}</Text>
+              <Text style={styles.idCardDetail}>Phone: {profile.phone}</Text>
+              <Text style={styles.idCardDetail}>Nominee: {profile.nominee}</Text>
+              <Text style={styles.idCardStatus}>KYC: {profile.kyc_status.replaceAll("_", " ").toUpperCase()}</Text>
+            </View>
+            <Image
+              source={{ uri: `https://quickchart.io/qr?size=220&text=${encodeURIComponent(`Mahamilon Member: ${profile.member_no} - ${profile.name}`)}` }}
+              style={styles.idCardQr}
+            />
+          </View>
+        </LinearGradient>
+      </Panel>
+
+      <Panel title="Member Profile & Nominee" icon="person-circle-outline">
         <View style={styles.profileHeader}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{profile.name.split(" ").map(v=>v[0]).slice(0,2).join("")}</Text>
+            <Text style={styles.avatarText}>{profile.name.split(" ").map(v => v[0]).slice(0, 2).join("")}</Text>
           </View>
           <View style={styles.profileCopy}>
             <Text style={styles.profileName}>{profile.name}</Text>
             <Text style={styles.cardMeta}>{profile.member_no}</Text>
           </View>
         </View>
-        <InfoRow label="Phone" value={profile.phone} />
-        <InfoRow label="Email" value={profile.email??"Not provided"} />
-        <InfoRow label="Address" value={profile.address} />
-        <InfoRow label="Nominee" value={profile.nominee} />
-        <InfoRow label="Occupation" value={profile.occupation??"Not provided"} />
+        <InfoRow label="Mobile Phone" value={profile.phone} />
+        <InfoRow label="Email Address" value={profile.email ?? "Not provided"} />
+        <InfoRow label="Residential Address" value={profile.address} />
+        <InfoRow label="Nominee Name" value={profile.nominee} emphasis />
+        <InfoRow label="Occupation" value={profile.occupation ?? "Not provided"} />
+        <InfoRow label="KYC Verification" value={profile.kyc_status.replaceAll("_", " ").toUpperCase()} />
         <InfoRow label="Mahamilon Credit Score" value={`${profile.mcs_score} / 900`} emphasis />
-        <InfoRow label="Current maximum loan" value={`₹${Number(profile.maximum_loan).toLocaleString("en-IN")}`} />
+        <InfoRow label="Current Max Loan Limit" value={`₹${Number(profile.maximum_loan).toLocaleString("en-IN")}`} />
       </Panel>
 
-      <Panel title="Security" icon="lock-closed-outline">
-        <InfoRow label="Login method" value="Member ID + registered mobile + OTP/MPIN" />
-        <InfoRow label="Device alerts" value="Enabled" />
-        <InfoRow label="Data sync" value="Connected to encrypted live ledger" emphasis />
+      <Panel title="Deposit Accounts (Savings, FD, RD)" icon="wallet-outline">
+        <InfoRow label="Savings Balance" value={`₹${Number(profile.savings_balance ?? profile.total_balance).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} emphasis />
+        <InfoRow label="Fixed Deposits (FD)" value={`₹${Number(profile.fd_balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} />
+        <InfoRow label="Recurring Deposits (RD)" value={`₹${Number(profile.rd_balance ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} />
+        <InfoRow label="Total Society Balance" value={`₹${Number(profile.total_balance).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} emphasis />
+        <InfoRow label="Active Accounts" value={String(profile.active_accounts)} />
+      </Panel>
+
+      <Panel title="Loans & Financial Standing" icon="cash-outline">
+        <InfoRow label="Active Loans" value={String(activeLoans.length)} />
+        <InfoRow label="Outstanding Principal" value={`₹${outstandingLoan.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} emphasis />
+        <InfoRow label="Profit / Interest Earned" value={`₹${Number(dashboard.profit_earned ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} emphasis />
+        <InfoRow label="Penalties / Fines Due" value={`₹${Number(dashboard.penalties_due ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`} />
+        <InfoRow label="Total Receipts Issued" value={String(dashboard.receipts?.length ?? 0)} />
+      </Panel>
+
+      <Panel title="Security & Authentication" icon="lock-closed-outline">
+        <InfoRow label="Login Method" value="Member ID + registered mobile + OTP/MPIN" />
+        <InfoRow label="Device Alerts" value="Active & synchronized" />
+        <InfoRow label="Data Sync" value="Connected to encrypted live society ledger" emphasis />
       </Panel>
     </>
   );
@@ -1534,5 +1705,220 @@ const styles = StyleSheet.create({
   },
   navLabelActive: {
     color: colors.navy
+  },
+  kycBanner: {
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: "#fff0f0",
+    borderWidth: 1,
+    borderColor: "#ffd4d4",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10
+  },
+  kycBannerCopy: {
+    flex: 1
+  },
+  kycBannerTitle: {
+    color: colors.red,
+    fontSize: 14,
+    fontWeight: "900",
+    marginBottom: 2
+  },
+  kycBannerText: {
+    color: "#681316",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
+  },
+  kycReuploadBtn: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: colors.red,
+    borderRadius: 6
+  },
+  kycReuploadBtnText: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  schemeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginHorizontal: 16,
+    marginTop: 10
+  },
+  schemeMiniCard: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: "center"
+  },
+  schemeMiniLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 4
+  },
+  schemeMiniVal: {
+    color: colors.navy,
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 2
+  },
+  receiptItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line
+  },
+  receiptNo: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  receiptCategory: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  receiptDate: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 1
+  },
+  receiptAmount: {
+    color: colors.green,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  receiptViewBadge: {
+    marginTop: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 4,
+    backgroundColor: "#edf4ff"
+  },
+  receiptViewText: {
+    color: colors.navy,
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    padding: 20
+  },
+  receiptModalCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 20,
+    ...shadow
+  },
+  receiptModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  receiptModalTitle: {
+    flex: 1,
+    marginLeft: 10,
+    color: colors.navy,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  receiptModalDivider: {
+    height: 1,
+    backgroundColor: colors.line,
+    marginVertical: 14
+  },
+  receiptModalFooter: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+    marginVertical: 14,
+    fontStyle: "italic"
+  },
+  idCard: {
+    borderRadius: 12,
+    padding: 16,
+    ...shadow
+  },
+  idCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.18)",
+    paddingBottom: 10,
+    marginBottom: 12
+  },
+  idCardLogo: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.white
+  },
+  idCardSociety: {
+    color: colors.white,
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.5
+  },
+  idCardSub: {
+    color: "#a9c4f5",
+    fontSize: 11,
+    fontWeight: "700"
+  },
+  idCardBody: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  idCardInfo: {
+    flex: 1,
+    paddingRight: 12
+  },
+  idCardMemberName: {
+    color: colors.white,
+    fontSize: 16,
+    fontWeight: "900"
+  },
+  idCardMemberNo: {
+    color: "#e2ecff",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 2
+  },
+  idCardDetail: {
+    color: "#bfd3f8",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2
+  },
+  idCardStatus: {
+    color: "#4ade80",
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 4
+  },
+  idCardQr: {
+    width: 86,
+    height: 86,
+    borderRadius: 8,
+    backgroundColor: colors.white,
+    padding: 4
   }
 });

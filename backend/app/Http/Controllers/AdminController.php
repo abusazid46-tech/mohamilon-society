@@ -547,7 +547,8 @@ class AdminController extends Controller
                     $maturityAmount = round($totalPrincipal + $profit, 2);
                 } else {
                     $t = $tenureMonths / 12;
-                    $maturityAmount = round((float)$data['opening_deposit'] * pow(1 + ($rate / 100), $t), 2);
+                    $profit = round((float)$data['opening_deposit'] * ($rate / 100) * $t, 2);
+                    $maturityAmount = round((float)$data['opening_deposit'] + $profit, 2);
                 }
             }
 
@@ -2803,10 +2804,10 @@ class AdminController extends Controller
         $user = DB::table('users')->where('id', $member->user_id)->firstOrFail();
 
         $data = $request->validate([
-            'member_no' => 'required|string|max:50|unique:members,member_no,' . $member->id,
+            'member_no' => 'required|string|max:50',
             'name' => 'required|string|max:120',
-            'phone' => 'required|string|max:20|unique:users,phone,' . $user->id,
-            'email' => 'nullable|email|max:120|unique:users,email,' . $user->id,
+            'phone' => 'nullable|string|max:20',
+            'email' => 'nullable|string|max:120',
             'status' => 'nullable|in:active,pending,suspended,blocked',
             'mpin' => 'nullable|digits:6',
             'created_at' => 'nullable|date',
@@ -2865,11 +2866,32 @@ class AdminController extends Controller
         DB::transaction(function () use ($request, $member, $user, $data) {
             $userUpdates = [
                 'name' => $data['name'],
-                'phone' => $data['phone'],
-                'email' => $data['email'] ?? null,
                 'status' => $data['status'] ?? $user->status ?? 'active',
                 'updated_at' => now(),
             ];
+
+            // Safely update phone if not conflicting with another user
+            if (!empty($data['phone'])) {
+                $phone = trim($data['phone']);
+                $phoneTaken = DB::table('users')->where('phone', $phone)->where('id', '!=', $user->id)->exists();
+                if (!$phoneTaken) {
+                    $userUpdates['phone'] = $phone;
+                }
+            }
+
+            // Safely update email: browser autofill frequently fills admin credentials; ignore taken emails gracefully
+            if (!empty($data['email'])) {
+                $email = strtolower(trim($data['email']));
+                if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $emailTaken = DB::table('users')->where('email', $email)->where('id', '!=', $user->id)->exists();
+                    if (!$emailTaken) {
+                        $userUpdates['email'] = $email;
+                    }
+                }
+            } else {
+                $userUpdates['email'] = null;
+            }
+
             if (!empty($data['mpin'])) {
                 $userUpdates['mpin_hash'] = Hash::make($data['mpin']);
             }
@@ -2879,8 +2901,13 @@ class AdminController extends Controller
             }
             DB::table('users')->where('id', $user->id)->update($userUpdates);
 
+            // Safely update member_no if not conflicting
+            $targetMemberNo = !empty($data['member_no']) ? trim($data['member_no']) : $member->member_no;
+            $memberNoConflict = DB::table('members')->where('member_no', $targetMemberNo)->where('id', '!=', $member->id)->exists();
+            $finalMemberNo = $memberNoConflict ? $member->member_no : $targetMemberNo;
+
             $memberUpdates = [
-                'member_no' => $data['member_no'],
+                'member_no' => $finalMemberNo,
                 'address' => $data['address'] ?? $member->address,
                 'present_address' => $data['present_address'] ?? ($data['address'] ?? $member->address),
                 'pincode' => $data['pincode'] ?? $member->pincode,

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="crestGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#061f49"/>
+      <stop offset="50%" stop-color="#092f6d"/>
+      <stop offset="100%" stop-color="#144a9e"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e2a829"/>
+      <stop offset="100%" stop-color="#f8d675"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Ring -->
+  <circle cx="100" cy="100" r="95" fill="url(#crestGrad)" stroke="url(#goldGrad)" stroke-width="4"/>
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#ffffff" stroke-width="1" stroke-dasharray="3,3" opacity="0.6"/>
+  <circle cx="100" cy="100" r="74" fill="#082352" stroke="url(#goldGrad)" stroke-width="2"/>
+
+  <!-- Curved Text Path -->
+  <path id="textArcTop" d="M 28 100 A 72 72 0 0 1 172 100" fill="none"/>
+  <text fill="#ffffff" font-size="9" font-family="Inter, system-ui, sans-serif" font-weight="700" letter-spacing="1.5">
+    <textPath href="#textArcTop" startOffset="50%" text-anchor="middle">
+      MAHAMILON SOCIETY
+    </textPath>
+  </text>
+
+  <path id="textArcBottom" d="M 172 100 A 72 72 0 0 1 28 100" fill="none"/>
+  <text fill="#f8d675" font-size="8" font-family="Inter, system-ui, sans-serif" font-weight="600" letter-spacing="1">
+    <textPath href="#textArcBottom" startOffset="50%" text-anchor="middle">
+      TRUST • PROSPERITY • CO-OP
+    </textPath>
+  </text>
+
+  <!-- Center Shield / Icon -->
+  <g transform="translate(100, 100)">
+    <!-- Shield Outline -->
+    <path d="M 0 -38 C 24 -38 32 -30 32 -14 C 32 16 0 34 0 38 C 0 34 -32 16 -32 -14 C -32 -30 -24 -38 0 -38 Z" 
+          fill="url(#crestGrad)" stroke="url(#goldGrad)" stroke-width="2.5"/>
+    
+    <!-- Balance Scales of Finance -->
+    <path d="M 0 -24 L 0 16 M -18 -14 L 18 -14 M 0 -24 L -4 -20 L 4 -20 Z" 
+          stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+    
+    <!-- Left Scale Pan -->
+    <path d="M -18 -14 L -23 -4 L -13 -4 Z" fill="none" stroke="#f8d675" stroke-width="1.5"/>
+    <path d="M -26 -4 C -26 0 -10 0 -10 -4 Z" fill="#f8d675"/>
+
+    <!-- Right Scale Pan -->
+    <path d="M 18 -14 L 13 -4 L 23 -4 Z" fill="none" stroke="#f8d675" stroke-width="1.5"/>
+    <path d="M 10 -4 C 10 0 26 0 26 -4 Z" fill="#f8d675"/>
+
+    <!-- MMS Monogram -->
+    <text x="0" y="24" fill="#ffffff" font-size="10" font-family="Inter, system-ui, sans-serif" font-weight="800" text-anchor="middle" letter-spacing="1.2">
+      MMS
+    </text>
+  </g>
+</svg>

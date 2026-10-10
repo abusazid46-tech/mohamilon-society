@@ -724,7 +724,7 @@
                 <button type="button" onclick="closeEditFormModal()" style="background: none; border: none; color: white; font-size: 26px; cursor: pointer; line-height: 1;">&times;</button>
             </div>
 
-            <form method="post" action="/admin/members/{{ $member->id }}/update" style="padding: 22px; margin: 0; overflow-y: auto; flex: 1;">
+            <form method="post" action="/admin/members/{{ $member->id }}/update" autocomplete="off" style="padding: 22px; margin: 0; overflow-y: auto; flex: 1;">
                 @csrf
 
                 <!-- SECTION 1: ACCOUNT & STATUS -->
@@ -830,11 +830,11 @@
                         </div>
                         <div>
                             <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Email Address</label>
-                            <input type="email" name="email" value="{{ $member->email }}" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            <input type="text" name="email" value="{{ $member->email }}" autocomplete="off" placeholder="Leave blank if not applicable" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
                         </div>
                         <div>
                             <label style="font-size: 11px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Reset MPIN (6-digit, optional)</label>
-                            <input type="password" name="mpin" maxlength="6" pattern="^[0-9]{6}$" placeholder="Leave blank to keep" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
+                            <input type="password" name="mpin" maxlength="6" pattern="^[0-9]{6}$" autocomplete="new-password" placeholder="Leave blank to keep" style="width: 100%; padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 5px; font-size: 12px;">
                         </div>
                     </div>
                     <div style="display: grid; grid-template-columns: 2fr 2fr 1fr; gap: 12px;">

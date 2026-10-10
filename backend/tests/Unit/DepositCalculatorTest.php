@@ -10,17 +10,17 @@ class DepositCalculatorTest extends TestCase
 {
     public function test_fd_calculation_computes_correct_maturity_and_profit(): void
     {
-        $principal = 50000.0;
-        $rate = 8.0; // 8% annual
+        $principal = 200000.0;
+        $rate = 10.0; // 10% annual
         $tenure = 12; // 12 months
         $startDate = '2026-01-01';
 
         $result = DepositCalculator::calculateFd($principal, $rate, $tenure, $startDate);
 
-        $this->assertEquals(50000.0, $result['principal']);
+        $this->assertEquals(200000.0, $result['principal']);
         $this->assertEquals('2027-01-01', $result['matures_on']);
-        $this->assertGreaterThan(0, $result['profit']);
-        $this->assertEquals($result['principal'] + $result['profit'], $result['maturity_amount']);
+        $this->assertEquals(20000.0, $result['profit']);
+        $this->assertEquals(220000.0, $result['maturity_amount']);
     }
 
     public function test_fd_premature_closure_applies_penalty_rate_deduction(): void

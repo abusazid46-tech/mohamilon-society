@@ -275,7 +275,7 @@
             </div>
 
             <div class="cert-statement">
-                This is to certify that <b>{{ $account->member_name }}</b> (Member ID: <b>{{ $account->member_no }}</b>) has deposited with <b>{{ $societyName }}</b> the principal sum of <b>&#8377;{{ number_format($account->principal, 2) }}</b> under the <b>{{ $account->scheme_name }}</b> scheme. This term deposit earns interest at the contracted rate of <b>{{ $account->custom_interest_rate ?: $account->default_rate }}% per annum</b> with quarterly compounding, maturing on <b>{{ $account->matures_on ?: 'N/A' }}</b> with a total maturity value of <b>&#8377;{{ number_format($account->maturity_amount ?: $account->balance, 2) }}</b>, payable subject to the terms and rules of the society.
+                This is to certify that <b>{{ $account->member_name }}</b> (Member ID: <b>{{ $account->member_no }}</b>) has deposited with <b>{{ $societyName }}</b> the principal sum of <b>&#8377;{{ number_format($account->principal, 2) }}</b> under the <b>{{ $account->scheme_name }}</b> scheme. This term deposit earns interest at the contracted rate of <b>{{ $account->custom_interest_rate ?: $account->default_rate }}% per annum</b>, maturing on <b>{{ $account->matures_on ?: 'N/A' }}</b> with a total maturity value of <b>&#8377;{{ number_format($account->maturity_amount ?: $account->balance, 2) }}</b>, payable subject to the terms and rules of the society.
             </div>
 
             <div class="financial-highlight">
