@@ -341,7 +341,7 @@
                 <div style="overflow-x:auto">
                     <table>
                         <thead>
-                            <tr><th>Certificate No</th><th>Account No</th><th>Principal Deposited</th><th>Annual Rate</th><th>Tenure</th><th>Maturity Amount</th><th>Maturity Date</th><th>Status</th></tr>
+                            <tr><th>Certificate No</th><th>Account No</th><th>Principal Deposited</th><th>Annual Rate</th><th>Tenure</th><th>Maturity Amount</th><th>Maturity Date</th><th>Status</th><th>Actions</th></tr>
                         </thead>
                         <tbody>
                             @foreach($fdAccounts as $fd)
@@ -354,6 +354,19 @@
                                 <td class="amount-pos">₹{{ number_format($fd->maturity_amount ?: $fd->balance, 2) }}</td>
                                 <td>{{ $fd->matures_on ? \Carbon\Carbon::parse($fd->matures_on)->format('d M Y') : '—' }}</td>
                                 <td><span class="badge {{ $fd->status }}">{{ $fd->status }}</span></td>
+                                <td>
+                                    <div style="display:flex;gap:4px;">
+                                        <a href="/admin/accounts/{{ $fd->id }}/fd-certificate" target="_blank" class="button" style="padding: 2px 7px; font-size: 11px; background: #0284c7; color: white; display: inline-flex; align-items: center; gap: 3px;" title="View Certificate">
+                                            <i class="bi bi-printer"></i>
+                                        </a>
+                                        <form method="post" action="/admin/fd/{{ $fd->id }}/delete" style="display:inline;margin:0;" onsubmit="return confirm('Permanently delete Fixed Deposit {{ $fd->account_no }}?');">
+                                            @csrf
+                                            <button class="button danger" style="padding: 2px 7px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;" title="Delete Fixed Deposit">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -373,7 +386,7 @@
                 <div style="overflow-x:auto">
                     <table>
                         <thead>
-                            <tr><th>Certificate / Acc No</th><th>Scheme</th><th>Monthly Installment</th><th>Rate</th><th>Tenure</th><th>Maturity Target</th><th>Current Balance</th><th>Status</th></tr>
+                            <tr><th>Certificate / Acc No</th><th>Scheme</th><th>Monthly Installment</th><th>Rate</th><th>Tenure</th><th>Maturity Target</th><th>Current Balance</th><th>Current Due</th><th>Status</th><th>Actions</th></tr>
                         </thead>
                         <tbody>
                             @foreach($rdAccounts as $rd)
@@ -385,7 +398,23 @@
                                 <td>{{ $rd->term_months }} Months</td>
                                 <td class="amount-pos">₹{{ number_format($rd->maturity_amount, 2) }}</td>
                                 <td>₹{{ number_format($rd->balance, 2) }}</td>
+                                <td>
+                                    @if(($rd->total_due ?? 0) > 0)
+                                        <b style="color:var(--red)">₹{{ number_format($rd->total_due, 2) }}</b><br>
+                                        <span class="badge rejected" style="font-size:10px;">{{ $rd->due_count }} Due</span>
+                                    @else
+                                        <span class="badge active" style="font-size:10px;">Clear</span>
+                                    @endif
+                                </td>
                                 <td><span class="badge {{ $rd->status }}">{{ $rd->status }}</span></td>
+                                <td>
+                                    <form method="post" action="/admin/rd/{{ $rd->id }}/delete" style="display:inline;margin:0;" onsubmit="return confirm('Permanently delete Recurring Deposit {{ $rd->account_no }} and all installments?');">
+                                        @csrf
+                                        <button class="button danger" style="padding: 2px 7px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer;" title="Delete Recurring Deposit">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -399,7 +428,7 @@
                     <div style="overflow-x:auto;max-height:400px">
                         <table>
                             <thead>
-                                <tr><th>Inst #</th><th>Account No</th><th>Due Date</th><th>Amount Due</th><th>Penalty Due</th><th>Paid Amount</th><th>Status</th><th>Paid At</th></tr>
+                                <tr><th>Inst #</th><th>Account No</th><th>Due Date</th><th>Amount Due</th><th>Penalty Due</th><th>Paid Amount</th><th>Status</th><th>Paid At</th><th>Actions</th></tr>
                             </thead>
                             <tbody>
                                 @foreach($rdInstallments as $inst)
@@ -412,6 +441,24 @@
                                     <td class="amount-pos">₹{{ number_format($inst->paid_amount, 2) }}</td>
                                     <td><span class="badge {{ $inst->status }}">{{ $inst->status }}</span></td>
                                     <td>{{ $inst->paid_at ? \Carbon\Carbon::parse($inst->paid_at)->format('d M Y') : '—' }}</td>
+                                    <td>
+                                        @if($inst->status === 'paid')
+                                            <form method="post" action="/admin/rd-installments/{{ $inst->id }}/delete" style="display:inline;margin:0;" onsubmit="return confirm('Reverse / delete payment for installment #{{ $inst->installment_no }}?');">
+                                                @csrf
+                                                <button class="button danger" style="padding: 1px 6px; font-size: 10px; background: #dc2626; color: white; border: none; border-radius: 3px; cursor: pointer;" title="Reverse / Delete Payment">
+                                                    <i class="bi bi-trash"></i> Revert
+                                                </button>
+                                            </form>
+                                        @else
+                                            <form method="post" action="/admin/rd-installments/{{ $inst->id }}/pay" style="display:inline;margin:0;" onsubmit="return confirm('Collect single installment #{{ $inst->installment_no }} (₹{{ number_format($inst->amount_due, 2) }})?');">
+                                                @csrf
+                                                <input type="hidden" name="payment_mode" value="cash">
+                                                <button class="button success" style="padding: 1px 6px; font-size: 10px; background: #059669; color: white; border: none; border-radius: 3px; cursor: pointer;" title="Collect Payment">
+                                                    Collect
+                                                </button>
+                                            </form>
+                                        @endif
+                                    </td>
                                 </tr>
                                 @endforeach
                             </tbody>

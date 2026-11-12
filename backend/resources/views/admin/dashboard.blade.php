@@ -783,6 +783,16 @@
                 </div>
             </a>
 
+            <a href="#deposits" style="text-decoration:none">
+                <div class="stat-card" style="{{ ($metrics['rd_due_count'] ?? 0) > 0 ? 'border-color:#fca5a5;background:#fff5f5' : '' }}">
+                    <div class="stat-icon icon-amber"><i class="bi bi-calendar2-x"></i></div>
+                    <div class="stat-content">
+                        <h4 style="{{ ($metrics['rd_overdue_count'] ?? 0) > 0 ? 'color:var(--red)' : '' }}">{!! $fmt($metrics['rd_due_amount'] ?? 0) !!}</h4>
+                        <span>RD Dues Pending ({{ $metrics['rd_due_count'] ?? 0 }})</span>
+                    </div>
+                </div>
+            </a>
+
             <a href="#transactions" style="text-decoration:none">
                 <div class="stat-card">
                     <div class="stat-icon icon-indigo"><i class="bi bi-arrow-left-right"></i></div>
@@ -887,15 +897,15 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Allotment of Shares <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="share_count" type="number" min="1" max="100" value="1" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="share_count" id="customerCreateShareCount" type="number" min="1" max="100" value="1" oninput="calcCustomerCreateDeposit()" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 700;">
                     </div>
 
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Opening Deposit Amount (&#8377;) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="opening_deposit" type="number" min="500" step="10" value="500" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 700;">
-                        <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Min. &#8377;500 per share for Savings Account</span>
+                        <input name="opening_deposit" id="customerCreateOpeningDeposit" type="number" min="500" step="10" value="500" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 700; background: #f8fafc;">
+                        <span id="customerCreateDepositHint" style="font-size: 10.5px; color: #15803d; font-weight: 600; margin-top: 3px; display: block;">&#8377;500 per share (1 share = &#8377;500 opening deposit)</span>
                     </div>
                 </div>
 
@@ -2075,6 +2085,14 @@
                                     <a class="button" style="padding: 3px 7px; font-size: 11px; background: #25D366; color: white; display: inline-flex; align-items: center; text-decoration: none;" href="https://wa.me/?text={{ $waMsg }}" target="_blank" title="Share via WhatsApp">
                                         <i class="bi bi-whatsapp"></i>
                                     </a>
+                                    @if($can('deposit.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager'], true))
+                                    <form method="post" action="/admin/receipts/{{ $r->id }}/delete" style="display:inline; margin: 0;" onsubmit="return confirm('Permanently delete receipt #{{ $r->receipt_no }} (₹{{ number_format((float)$r->amount, 2) }}) and reverse account balance?');">
+                                        @csrf
+                                        <button class="button danger" style="padding: 3px 8px; font-size: 11px; background: #dc2626; color: white; display: inline-flex; align-items: center; gap: 3px; border: none; font-weight: 700; cursor: pointer; border-radius: 4px;" title="Delete Receipt Transaction & Reverse Balance">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                    @endif
                                 </div>
                             </td>
                         </tr>
@@ -2168,13 +2186,24 @@
             <td>{{$fd->matures_on}}</td>
             <td><b>&#8377;{{number_format($fd->maturity_amount ?: $fd->balance,2)}}</b></td>
             <td>
-                <div style="display: flex; gap: 4px;">
+                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                    <button type="button" class="button" onclick="openFdPassbookModal({{ $fd->id }})" style="padding: 3px 8px; font-size: 11px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="View Real-Time FD Passbook & Transactions">
+                        <i class="bi bi-journal-text"></i> Passbook
+                    </button>
                     <a href="/admin/accounts/{{$fd->id}}/fd-certificate" target="_blank" class="button" style="padding: 3px 8px; font-size: 11px; background: #0284c7; color: white; display: inline-flex; align-items: center; gap: 3px;" title="View & Print Official FD Certificate">
                         <i class="bi bi-printer"></i> Certificate
                     </a>
                     <a href="/admin/accounts/{{$fd->id}}/fd-certificate/download" class="button" style="padding: 3px 8px; font-size: 11px; background: #f1f5f9; color: #334155; display: inline-flex; align-items: center;" title="Download Certificate HTML">
                         <i class="bi bi-download"></i>
                     </a>
+                    @if($can('account.reject') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager'], true))
+                    <form method="post" action="/admin/fd/{{$fd->id}}/delete" style="display:inline; margin: 0;" onsubmit="return confirm('Permanently delete Fixed Deposit {{$fd->account_no}} (Cert: {{$fd->certificate_no ?: 'N/A'}}) and reverse all transactions?');">
+                        @csrf
+                        <button class="button danger" style="padding: 3px 8px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="Delete Fixed Deposit Account">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </form>
+                    @endif
                 </div>
             </td>
         </tr>
@@ -2185,7 +2214,7 @@
             <h3 style="margin: 0;">Active Recurring Deposits</h3>
             <span class="muted" style="font-size: 12px;">Total: {{ count($rdAccounts) }}</span>
         </div>
-        <table><thead><tr><th>Account No</th><th>Type</th><th>Member</th><th>Commitment</th><th>Total Balance</th><th>Matures On</th><th>Maturity Target</th><th>Actions</th></tr></thead><tbody>
+        <table><thead><tr><th>Account No</th><th>Type</th><th>Member</th><th>Commitment</th><th>Total Balance</th><th>Current Due</th><th>Matures On</th><th>Maturity Target</th><th>Actions</th></tr></thead><tbody>
         @forelse($rdAccounts as $rd)
         <tr>
             <td><b>{{$rd->account_no}}</b><br><small class="muted">{{ $rd->scheme_name ?? 'RD' }}</small></td>
@@ -2199,22 +2228,38 @@
             <td>{{$rd->name}}<br><small class="muted">{{$rd->member_no}}</small></td>
             <td>&#8377;{{number_format($rd->monthly_commitment,2)}}/{{ ($rd->deposit_frequency ?? '') === 'daily' ? 'day' : 'mo' }}</td>
             <td><b style="color:#059669;">&#8377;{{number_format($rd->balance,2)}}</b></td>
+            <td>
+                @if(($rd->total_due ?? 0) > 0)
+                <b style="color:#b91c1c;">&#8377;{{number_format($rd->total_due,2)}}</b><br>
+                <span class="badge" style="background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-size:10px;font-weight:700;">{{$rd->due_count}} Due</span>
+                @else
+                <span class="badge" style="background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;font-size:10px;">Clear</span>
+                @endif
+            </td>
             <td>{{$rd->matures_on ?: 'N/A'}}</td>
             <td><b>&#8377;{{number_format($rd->maturity_amount ?: 0,2)}}</b></td>
             <td>
                 <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                    <button type="button" class="button" onclick="openRdScheduleModal({{ $rd->id }})" style="padding: 3px 8px; font-size: 11px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="View Complete Schedule & Passbook">
-                        <i class="bi bi-calendar3"></i> Passbook
+                    <button type="button" class="button" onclick="openRdScheduleModal({{ $rd->id }})" style="padding: 3px 8px; font-size: 11px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="View Complete Schedule & Real-Time Passbook">
+                        <i class="bi bi-journal-text"></i> Passbook
                     </button>
                     @if($can('deposit.create'))
                     <button type="button" class="button" onclick="openAdvancePayModal({{ $rd->id }}, '{{ $rd->account_no }}', '{{ addslashes($rd->name) }}', {{ $rd->monthly_commitment }}, '{{ $rd->deposit_frequency ?? 'daily' }}')" style="padding: 3px 8px; font-size: 11px; background: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="Pay Next 10 Days or Custom Days in Advance">
-                        <i class="bi bi-cash-stack"></i> Pay Advance / Days
+                        <i class="bi bi-cash-stack"></i> Pay Advance
                     </button>
+                    @endif
+                    @if($can('account.reject') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager'], true))
+                    <form method="post" action="/admin/rd/{{$rd->id}}/delete" style="display:inline; margin: 0;" onsubmit="return confirm('Permanently delete Recurring Deposit {{$rd->account_no}} and all installments?');">
+                        @csrf
+                        <button class="button danger" style="padding: 3px 8px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="Delete Recurring Deposit Account">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </form>
                     @endif
                 </div>
             </td>
         </tr>
-        @empty<tr><td colspan="8">No active Recurring Deposits.</td></tr>@endforelse
+        @empty<tr><td colspan="9">No active Recurring Deposits.</td></tr>@endforelse
         </tbody></table>
     </section>
 
@@ -2251,9 +2296,9 @@
             </div>
             <h3>Account details</h3>
             <div class="row">
-                <div class="field"><label>Account plan</label><select name="scheme_id" required>@foreach($schemes as $s)<option value="{{$s->id}}" @selected((string)old('scheme_id')===(string)$s->id)>{{$s->name}} ({{$s->annual_rate}}%)</option>@endforeach</select></div>
-                <div class="field"><label>Opening amount</label><input name="opening_deposit" value="{{old('opening_deposit')}}" type="number" min="1" step=".01" required></div>
-                <div class="field"><label>Shares (&#8377;500/month each)</label><input name="share_count" type="number" value="{{old('share_count',1)}}" min="1" max="100"></div>
+                <div class="field"><label>Account plan</label><select name="scheme_id" id="adminSchemeSelect" onchange="calcAdminAccountDeposit()" required>@foreach($schemes as $s)<option value="{{$s->id}}" data-type="{{$s->type}}" @selected((string)old('scheme_id')===(string)$s->id)>{{$s->name}} ({{$s->annual_rate}}%)</option>@endforeach</select></div>
+                <div class="field"><label>Shares (&#8377;500 each)</label><input name="share_count" id="adminAccountShareCount" type="number" value="{{old('share_count',1)}}" min="1" max="100" oninput="calcAdminAccountDeposit()"></div>
+                <div class="field"><label>Opening amount (&#8377;)</label><input name="opening_deposit" id="adminAccountOpeningDeposit" value="{{old('opening_deposit', 500)}}" type="number" min="500" step="10" required></div>
                 <div class="field"><label>Custom interest % (optional)</label><input name="custom_interest_rate" value="{{old('custom_interest_rate')}}" type="number" step=".001" min="0" max="30" placeholder="Blank = plan rate"></div>
                 <div class="field"><label>Deposit Tenure (Months)</label><input name="tenure_months" type="number" min="1" max="600" value="{{old('tenure_months', 12)}}" placeholder="e.g. 12, 24, 36, 60"></div>
                 <div class="field"><label>Maturity Date (optional)</label><input name="maturity_date" type="date" value="{{old('maturity_date')}}"></div>
@@ -2571,8 +2616,25 @@
             <div class="metric"><strong>&#8377;{{number_format($transactionSummary['net'],2)}}</strong><span>Filtered net movement</span></div>
         </div>
         <div class="row" style="justify-content:space-between;margin:16px 0 6px"><b>Results</b><span class="muted">Showing {{$transactions->firstItem()??0}}–{{$transactions->lastItem()??0}} of {{$transactions->total()}}</span></div>
-        <table><thead><tr><th>Date</th><th>Member / account</th><th>Description</th><th>Direction</th><th>Amount</th><th>Status</th></tr></thead><tbody>
-        @forelse($transactions as $t)<tr><td>{{$t->posted_at}}</td><td><b>{{$t->name}}</b><br>{{$t->member_no}} · {{$t->account_no}}</td><td>{{$t->description}}<br><small>{{$t->reference}}</small></td><td><span class="badge {{$t->direction==='credit'?'active':'rejected'}}">{{$t->direction}}</span></td><td>&#8377;{{number_format($t->amount,2)}}</td><td><span class="badge {{$t->status}}">{{$t->status}}</span></td></tr>@empty<tr><td colspan="6">No transactions match the selected filters.</td></tr>@endforelse
+        <table><thead><tr><th>Date</th><th>Member / account</th><th>Description</th><th>Direction</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+        @forelse($transactions as $t)<tr>
+            <td>{{$t->posted_at}}</td>
+            <td><b>{{$t->name}}</b><br>{{$t->member_no}} · {{$t->account_no}}</td>
+            <td>{{$t->description}}<br><small>{{$t->reference}}</small></td>
+            <td><span class="badge {{$t->direction==='credit'?'active':'rejected'}}">{{$t->direction}}</span></td>
+            <td>&#8377;{{number_format($t->amount,2)}}</td>
+            <td><span class="badge {{$t->status}}">{{$t->status}}</span></td>
+            <td>
+                @if($can('transaction.create') || in_array(auth()->user()->role ?? '', ['super_admin','president','manager'], true))
+                <form method="post" action="/admin/transactions/{{$t->id}}/delete" style="display:inline; margin: 0;" onsubmit="return confirm('Permanently delete transaction {{$t->reference}} (&#8377;{{number_format($t->amount,2)}}) and adjust account balance?');">
+                    @csrf
+                    <button class="button danger" style="padding: 2px 7px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="Delete Transaction & Reverse Balance">
+                        <i class="bi bi-trash"></i> Delete
+                    </button>
+                </form>
+                @endif
+            </td>
+        </tr>@empty<tr><td colspan="7">No transactions match the selected filters.</td></tr>@endforelse
         </tbody></table>
         @if($transactions->hasPages())<div class="row" style="justify-content:flex-end;margin-top:14px">@if($transactions->onFirstPage())<span class="button secondary" style="opacity:.5">Previous</span>@else<a class="button secondary" href="{{$transactions->previousPageUrl()}}#transactions">Previous</a>@endif <span class="muted" style="align-self:center">Page {{$transactions->currentPage()}} of {{$transactions->lastPage()}}</span> @if($transactions->hasMorePages())<a class="button" href="{{$transactions->nextPageUrl()}}#transactions">Next</a>@else<span class="button secondary" style="opacity:.5">Next</span>@endif</div>@endif
     </section>
@@ -4456,83 +4518,261 @@
         if (field) field.style.display = (mode === 'bank' || mode === 'upi') ? 'block' : 'none';
     }
 
-    let allScheduleItems = [];
+    function calcCustomerCreateDeposit() {
+        const shareInput = document.getElementById('customerCreateShareCount');
+        const depositInput = document.getElementById('customerCreateOpeningDeposit');
+        const hint = document.getElementById('customerCreateDepositHint');
+        if (!shareInput || !depositInput) return;
+        const shares = Math.max(1, parseInt(shareInput.value, 10) || 1);
+        const amount = shares * 500;
+        depositInput.value = amount;
+        depositInput.min = amount;
+        if (hint) {
+            hint.innerHTML = `&#8377;500 per share (${shares} share${shares > 1 ? 's' : ''} = &#8377;${amount.toLocaleString('en-IN')})`;
+        }
+    }
 
-    function openRdScheduleModal(accountId) {
+    function calcAdminAccountDeposit() {
+        const shareInput = document.getElementById('adminAccountShareCount');
+        const depositInput = document.getElementById('adminAccountOpeningDeposit');
+        if (!shareInput || !depositInput) return;
+        const shares = Math.max(1, parseInt(shareInput.value, 10) || 1);
+        const amount = shares * 500;
+        depositInput.value = amount;
+        depositInput.min = amount;
+    }
+
+    let allScheduleItems = [];
+    let allPassbookTransactions = [];
+    let currentPassbookAccount = null;
+
+    function openPassbookModal(accountId, defaultView = 'ledger') {
         const modal = document.getElementById('rdScheduleModal');
         if (!modal) return;
         modal.style.display = 'flex';
 
-        const tbody = document.getElementById('schedTableBody');
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 25px; color: #64748b;"><i class="bi bi-hourglass-split"></i> Loading RD schedule from database...</td></tr>';
+        const tbodyLedger = document.getElementById('passbookLedgerTableBody');
+        const tbodySched = document.getElementById('schedTableBody');
+        if (tbodyLedger) tbodyLedger.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 25px; color: #64748b;"><i class="bi bi-hourglass-split"></i> Loading live passbook entries from database...</td></tr>';
+        if (tbodySched) tbodySched.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 25px; color: #64748b;"><i class="bi bi-hourglass-split"></i> Loading installment schedule...</td></tr>';
 
-        fetch('/admin/accounts/' + accountId + '/rd-schedule')
+        fetch('/admin/accounts/' + accountId + '/passbook')
             .then(res => res.json())
             .then(data => {
                 const acc = data.account;
-                const summ = data.summary;
-                allScheduleItems = data.installments;
+                currentPassbookAccount = acc;
+                allPassbookTransactions = data.transactions_chronological || [];
+                allScheduleItems = data.installments || [];
+                const isRd = (acc.scheme_type || '').toLowerCase() === 'rd';
+                const isFd = (acc.scheme_type || '').toLowerCase() === 'fd';
 
-                document.getElementById('schedModalTitle').textContent = 'Passbook & Schedule: ' + acc.account_no + ' (' + acc.member_name + ')';
-                document.getElementById('schedModalSubtitle').textContent = acc.scheme_name + ' • Rate: ' + (acc.custom_interest_rate || acc.default_rate) + '% p.a. • Matures: ' + (acc.matures_on || 'N/A');
+                document.getElementById('schedModalTitle').textContent = (isFd ? 'Fixed Deposit Passbook: ' : (isRd ? 'Recurring Deposit Passbook: ' : 'Passbook: ')) + acc.account_no + ' (' + acc.member_name + ')';
+                document.getElementById('schedModalSubtitle').textContent = acc.scheme_name + ' • Member: ' + acc.member_no + ' • Rate: ' + (acc.custom_interest_rate || acc.default_rate) + '% p.a. • Matures: ' + (acc.matures_on || 'N/A');
 
-                const percent = summ.total_count > 0 ? Math.round((summ.paid_count / summ.total_count) * 100) : 0;
-                const unit = (summ.frequency || '').toLowerCase() === 'daily' ? 'days' : 'installments';
+                // Toggle Installment Tab visibility
+                const tabScheduleBtn = document.getElementById('tabBtnSchedule');
+                if (tabScheduleBtn) {
+                    tabScheduleBtn.style.display = isRd ? 'inline-block' : 'none';
+                    document.getElementById('countSchedTab').textContent = allScheduleItems.length;
+                }
+                document.getElementById('countTx').textContent = (data.transactions || []).length;
 
-                document.getElementById('schedSummaryBox').innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
-                        <span style="font-size: 13px; font-weight: 800; color: #0369a1;">Payment Progress: ${summ.paid_count} of ${summ.total_count} ${unit} completed (${percent}%)</span>
-                        <span style="font-size: 12px; color: #64748b;">Next Due: ${summ.next_installment ? '#' + summ.next_installment.installment_no + ' on ' + summ.next_installment.due_on : 'Fully Settled'}</span>
-                    </div>
-                    <div style="background: #e2e8f0; border-radius: 999px; height: 10px; overflow: hidden; margin-bottom: 12px;">
-                        <div style="background: linear-gradient(90deg, #0284c7, #10b981); height: 100%; width: ${percent}%; border-radius: 999px; transition: width 0.3s ease;"></div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center;">
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
-                            <div style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">Commitment</div>
-                            <b style="font-size: 14px; color: #0f172a;">&#8377;${summ.commitment.toFixed(2)}/${(summ.frequency || '').toLowerCase() === 'daily' ? 'day' : 'mo'}</b>
+                // Render Summary Box
+                if (isRd && data.rd_summary) {
+                    const summ = data.rd_summary;
+                    const percent = summ.total_count > 0 ? Math.round((summ.paid_count / summ.total_count) * 100) : 0;
+                    const unit = (summ.frequency || '').toLowerCase() === 'daily' ? 'days' : 'installments';
+
+                    document.getElementById('schedSummaryBox').innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+                            <span style="font-size: 13px; font-weight: 800; color: #0369a1;">Payment Progress: ${summ.paid_count} of ${summ.total_count} ${unit} completed (${percent}%)</span>
+                            <span style="font-size: 12px; color: #64748b;">Next Due: ${summ.next_installment ? '#' + summ.next_installment.installment_no + ' on ' + summ.next_installment.due_on : 'Fully Settled'}</span>
                         </div>
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
-                            <div style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">Current Balance</div>
-                            <b style="font-size: 14px; color: #059669;">&#8377;${summ.current_balance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
+                        <div style="background: #e2e8f0; border-radius: 999px; height: 10px; overflow: hidden; margin-bottom: 12px;">
+                            <div style="background: linear-gradient(90deg, #0284c7, #10b981); height: 100%; width: ${percent}%; border-radius: 999px; transition: width 0.3s ease;"></div>
                         </div>
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
-                            <div style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">Remaining</div>
-                            <b style="font-size: 14px; color: #d97706;">${summ.remaining_count} ${unit}</b>
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; text-align: center;">
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Commitment</div>
+                                <b style="font-size: 13px; color: #0f172a;">&#8377;${summ.commitment.toFixed(2)}/${(summ.frequency || '').toLowerCase() === 'daily' ? 'day' : 'mo'}</b>
+                            </div>
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Live Balance</div>
+                                <b style="font-size: 13px; color: #059669;">&#8377;${summ.current_balance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
+                            </div>
+                            <div style="background: white; border: ${summ.due_count > 0 ? '1.5px solid #fca5a5; background:#fff5f5' : '1px solid #cbd5e1'}; border-radius: 6px; padding: 6px 10px;">
+                                <div style="font-size: 10px; color: ${summ.due_count > 0 ? '#b91c1c' : '#64748b'}; font-weight: 700; text-transform: uppercase;">Total Due</div>
+                                <b style="font-size: 13px; color: ${summ.due_count > 0 ? '#dc2626' : '#0f172a'};">&#8377;${summ.total_due_amount.toFixed(2)} (${summ.due_count})</b>
+                            </div>
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Remaining</div>
+                                <b style="font-size: 13px; color: #d97706;">${summ.remaining_count} ${unit}</b>
+                            </div>
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Maturity Target</div>
+                                <b style="font-size: 13px; color: #0284c7;">&#8377;${summ.target_amount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
+                            </div>
                         </div>
-                        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px;">
-                            <div style="font-size: 10.5px; color: #64748b; font-weight: 700; text-transform: uppercase;">Maturity Target</div>
-                            <b style="font-size: 14px; color: #0284c7;">&#8377;${summ.target_amount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
-                        </div>
-                    </div>
-                `;
-
-                document.getElementById('countAll').textContent = summ.total_count;
-                document.getElementById('countPaid').textContent = summ.paid_count;
-                document.getElementById('countDue').textContent = summ.due_count;
-                document.getElementById('countScheduled').textContent = summ.total_count - summ.paid_count - summ.due_count;
-
-                const quickBtnWrap = document.getElementById('schedQuickPayBtnWrap');
-                if (summ.remaining_count > 0) {
-                    quickBtnWrap.innerHTML = `
-                        <button type="button" onclick="closeRdScheduleModal(); openAdvancePayModal(${acc.id}, '${acc.account_no}', '${acc.member_name.replace(/'/g, "\\'")}', ${acc.monthly_commitment}, '${acc.deposit_frequency}');" class="button success" style="padding: 4px 12px; font-size: 11.5px; font-weight: 700;">
-                            <i class="bi bi-cash-stack"></i> Pay Advance Days
-                        </button>
                     `;
+
+                    // Handle Dues Alert Box
+                    const duesAlert = document.getElementById('schedDuesAlertBox');
+                    if (duesAlert) {
+                        if (summ.due_count > 0) {
+                            duesAlert.style.display = 'flex';
+                            document.getElementById('schedDuesAlertDesc').textContent = `Account has ₹${summ.total_due_amount.toFixed(2)} pending across ${summ.due_count} installment(s).`;
+                            document.getElementById('schedDuesActionWrap').innerHTML = `
+                                <button type="button" onclick="filterScheduleStatus('due'); switchPassbookView('schedule');" class="button" style="padding: 4px 10px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 4px; font-weight: 700; cursor: pointer;">
+                                    View Due Installments
+                                </button>
+                            `;
+                        } else {
+                            duesAlert.style.display = 'none';
+                        }
+                    }
+
+                    document.getElementById('countAll').textContent = summ.total_count;
+                    document.getElementById('countPaid').textContent = summ.paid_count;
+                    document.getElementById('countDue').textContent = summ.due_count;
+                    document.getElementById('countScheduled').textContent = summ.total_count - summ.paid_count - summ.due_count;
+
+                    const quickBtnWrap = document.getElementById('schedQuickPayBtnWrap');
+                    if (quickBtnWrap) {
+                        if (summ.remaining_count > 0) {
+                            quickBtnWrap.innerHTML = `
+                                <button type="button" onclick="closeRdScheduleModal(); openAdvancePayModal(${acc.id}, '${acc.account_no}', '${acc.member_name.replace(/'/g, "\\'")}', ${acc.monthly_commitment}, '${acc.deposit_frequency}');" class="button success" style="padding: 4px 12px; font-size: 11.5px; font-weight: 700;">
+                                    <i class="bi bi-cash-stack"></i> Pay Advance Days
+                                </button>
+                            `;
+                        } else {
+                            quickBtnWrap.innerHTML = '<span class="badge active" style="font-size: 11px;">Matured / All Paid</span>';
+                        }
+                    }
+
+                    renderScheduleTable(allScheduleItems);
                 } else {
-                    quickBtnWrap.innerHTML = '<span class="badge active" style="font-size: 11px;">Matured / All Paid</span>';
+                    // Summary box for FD / Savings
+                    const duesAlert = document.getElementById('schedDuesAlertBox');
+                    if (duesAlert) duesAlert.style.display = 'none';
+
+                    document.getElementById('schedSummaryBox').innerHTML = `
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; text-align: center;">
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Principal Deposited</div>
+                                <b style="font-size: 15px; color: #0f172a;">&#8377;${parseFloat(acc.principal || acc.balance).toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
+                            </div>
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Live Balance</div>
+                                <b style="font-size: 15px; color: #059669;">&#8377;${parseFloat(acc.balance).toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
+                            </div>
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Annual Rate</div>
+                                <b style="font-size: 15px; color: #0284c7;">${acc.custom_interest_rate || acc.default_rate}% p.a.</b>
+                            </div>
+                            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px;">
+                                <div style="font-size: 10px; color: #64748b; font-weight: 700; text-transform: uppercase;">Maturity Amount</div>
+                                <b style="font-size: 15px; color: #0284c7;">&#8377;${parseFloat(acc.maturity_amount || acc.balance).toLocaleString('en-IN', {minimumFractionDigits: 2})}</b>
+                            </div>
+                        </div>
+                    `;
                 }
 
-                renderScheduleTable(allScheduleItems);
+                renderPassbookLedgerTable(data.transactions || []);
+                switchPassbookView(isRd && defaultView === 'schedule' ? 'schedule' : 'ledger');
             })
             .catch(err => {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #ef4444;">Failed to load schedule. ' + err.message + '</td></tr>';
+                if (tbodyLedger) tbodyLedger.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px; color: #ef4444;">Failed to load passbook. ' + err.message + '</td></tr>';
             });
+    }
+
+    function openRdScheduleModal(accountId) {
+        openPassbookModal(accountId, 'schedule');
+    }
+
+    function openFdPassbookModal(accountId) {
+        openPassbookModal(accountId, 'ledger');
     }
 
     function closeRdScheduleModal() {
         const modal = document.getElementById('rdScheduleModal');
         if (modal) modal.style.display = 'none';
+    }
+
+    function switchPassbookView(view) {
+        const ledgerView = document.getElementById('passbookLedgerView');
+        const schedView = document.getElementById('passbookScheduleView');
+        const tabLedger = document.getElementById('tabBtnLedger');
+        const tabSched = document.getElementById('tabBtnSchedule');
+
+        if (view === 'ledger') {
+            if (ledgerView) ledgerView.style.display = 'block';
+            if (schedView) schedView.style.display = 'none';
+            if (tabLedger) {
+                tabLedger.style.background = '#0284c7';
+                tabLedger.style.color = 'white';
+            }
+            if (tabSched) {
+                tabSched.style.background = '#f1f5f9';
+                tabSched.style.color = '#334155';
+            }
+        } else {
+            if (ledgerView) ledgerView.style.display = 'none';
+            if (schedView) schedView.style.display = 'block';
+            if (tabSched) {
+                tabSched.style.background = '#0284c7';
+                tabSched.style.color = 'white';
+            }
+            if (tabLedger) {
+                tabLedger.style.background = '#f1f5f9';
+                tabLedger.style.color = '#334155';
+            }
+        }
+    }
+
+    function renderPassbookLedgerTable(items) {
+        const tbody = document.getElementById('passbookLedgerTableBody');
+        if (!tbody) return;
+        if (!items || items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 24px; color: #64748b;">No posted ledger transactions found for this account.</td></tr>';
+            return;
+        }
+
+        const csrfToken = document.querySelector('input[name="_token"]')?.value || '';
+
+        tbody.innerHTML = items.map(tx => {
+            const isCredit = tx.direction === 'credit';
+            const badgeStyle = isCredit
+                ? 'background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;'
+                : 'background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-weight: 700;';
+
+            return `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 7px 10px; font-size: 11.5px; white-space: nowrap;">${tx.posted_at || tx.created_at || '-'}</td>
+                    <td style="padding: 7px 10px; font-family: monospace; font-size: 11px;">${tx.reference}</td>
+                    <td style="padding: 7px 10px; font-size: 12px; font-weight: 600; color: #1e293b;">${tx.description}</td>
+                    <td style="padding: 7px 10px; text-align: center;">
+                        <span class="badge" style="${badgeStyle}; padding: 2px 7px; font-size: 10px; text-transform: uppercase;">
+                            ${tx.direction}
+                        </span>
+                    </td>
+                    <td style="padding: 7px 10px; text-align: right; font-weight: 700; color: ${isCredit ? '#15803d' : '#b91c1c'}; font-size: 12.5px;">
+                        ${isCredit ? '+' : '-'} &#8377;${parseFloat(tx.amount).toFixed(2)}
+                    </td>
+                    <td style="padding: 7px 10px; text-align: right; font-weight: 800; color: #0284c7; font-size: 12.5px;">
+                        &#8377;${parseFloat(tx.running_balance).toFixed(2)}
+                    </td>
+                    <td style="padding: 7px 10px; font-size: 11px; color: #64748b;">${tx.created_by_name || 'System'}</td>
+                    <td style="padding: 7px 10px; text-align: center;">
+                        <form method="post" action="/admin/transactions/${tx.id}/delete" style="display:inline; margin:0;" onsubmit="return confirm('Delete transaction ${tx.reference} (₹${parseFloat(tx.amount).toFixed(2)}) and reverse account balance?');">
+                            <input type="hidden" name="_token" value="${csrfToken}">
+                            <button class="button danger" style="padding: 2px 6px; font-size: 11px; background: #dc2626; color: white; border: none; border-radius: 3px; cursor: pointer;" title="Delete & Adjust Balance">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     }
 
     function filterScheduleStatus(status, btn) {
@@ -4552,7 +4792,7 @@
         } else if (status === 'paid') {
             renderScheduleTable(allScheduleItems.filter(i => i.status === 'paid'));
         } else if (status === 'due') {
-            renderScheduleTable(allScheduleItems.filter(i => i.status === 'due' || i.status === 'overdue'));
+            renderScheduleTable(allScheduleItems.filter(i => i.status === 'due' || i.status === 'overdue' || i.status === 'partial'));
         } else if (status === 'scheduled') {
             renderScheduleTable(allScheduleItems.filter(i => i.status === 'scheduled'));
         }
@@ -4560,8 +4800,9 @@
 
     function renderScheduleTable(items) {
         const tbody = document.getElementById('schedTableBody');
+        if (!tbody) return;
         if (!items || items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 18px; color: #64748b;">No installments found matching this filter.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 18px; color: #64748b;">No installments found matching this filter.</td></tr>';
             return;
         }
 
@@ -4573,13 +4814,21 @@
                 badgeStyle = 'background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; font-weight: 700;';
             } else if (inst.status === 'overdue') {
                 badgeStyle = 'background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-weight: 700;';
-            } else if (inst.status === 'due') {
+            } else if (inst.status === 'due' || inst.status === 'partial') {
                 badgeStyle = 'background: #fef3c7; color: #b45309; border: 1px solid #fde68a; font-weight: 700;';
             }
 
             const paidDateStr = inst.paid_at ? inst.paid_at.substring(0, 10) : '-';
             const actionCol = inst.status === 'paid'
-                ? `<span style="color: #059669; font-weight: 700;"><i class="bi bi-check-circle-fill"></i> Settled (${paidDateStr})</span>`
+                ? `<div style="display:inline-flex;gap:4px;align-items:center;">
+                     <span style="color: #059669; font-weight: 700; font-size: 11px;"><i class="bi bi-check-circle-fill"></i> Settled (${paidDateStr})</span>
+                     <form method="post" action="/admin/rd-installments/${inst.id}/delete" style="display:inline; margin:0;" onsubmit="return confirm('Reverse / delete payment for installment #${inst.installment_no}?');">
+                         <input type="hidden" name="_token" value="${csrfToken}">
+                         <button class="button danger" style="padding: 2px 5px; font-size: 10px; background:#dc2626; color:white; border:none; border-radius:3px; cursor:pointer;" title="Reverse / Delete Payment">
+                             <i class="bi bi-trash"></i>
+                         </button>
+                     </form>
+                   </div>`
                 : `<form method="post" action="/admin/rd-installments/${inst.id}/pay" style="display:inline; margin:0;" onsubmit="return confirm('Collect single installment #${inst.installment_no} (₹${parseFloat(inst.amount_due).toFixed(2)})?');">
                     <input type="hidden" name="_token" value="${csrfToken}">
                     <input type="hidden" name="payment_mode" value="cash">
@@ -4594,10 +4843,82 @@
                     <td style="padding: 6px 10px; color: ${parseFloat(inst.penalty_due) > 0 ? '#b91c1c' : '#64748b'};">&#8377;${parseFloat(inst.penalty_due).toFixed(2)}</td>
                     <td style="padding: 6px 10px; font-weight: 700; color: #059669;">&#8377;${parseFloat(inst.paid_amount).toFixed(2)}</td>
                     <td style="padding: 6px 10px;"><span class="badge" style="${badgeStyle}; padding: 2px 6px; font-size: 10px; text-transform: uppercase;">${inst.status}</span></td>
-                    <td style="padding: 6px 10px;">${actionCol}</td>
+                    <td style="padding: 6px 10px; font-size: 11.5px;">${paidDateStr}</td>
+                    <td style="padding: 6px 10px; text-align: center;">${actionCol}</td>
                 </tr>
             `;
         }).join('');
+    }
+
+    function printRealtimePassbook() {
+        if (!currentPassbookAccount) return;
+        const printWin = window.open('', '_blank');
+        if (!printWin) {
+            alert('Please allow popups to print the passbook.');
+            return;
+        }
+        const acc = currentPassbookAccount;
+        const rowsHtml = allPassbookTransactions.map(t => `
+            <tr>
+                <td style="padding:6px;border:1px solid #cbd5e1;">${t.posted_at || t.created_at || ''}</td>
+                <td style="padding:6px;border:1px solid #cbd5e1;font-family:monospace;">${t.reference}</td>
+                <td style="padding:6px;border:1px solid #cbd5e1;">${t.description}</td>
+                <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;color:${t.direction==='credit'?'#15803d':'#64748b'};font-weight:bold;">${t.direction==='credit' ? '₹' + parseFloat(t.amount).toFixed(2) : '-'}</td>
+                <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;color:${t.direction==='debit'?'#b91c1c':'#64748b'};font-weight:bold;">${t.direction==='debit' ? '₹' + parseFloat(t.amount).toFixed(2) : '-'}</td>
+                <td style="padding:6px;border:1px solid #cbd5e1;text-align:right;font-weight:bold;">₹${parseFloat(t.running_balance).toFixed(2)}</td>
+            </tr>
+        `).join('');
+
+        printWin.document.write(`
+            <html>
+            <head>
+                <title>Passbook - ${acc.account_no} - ${acc.member_name}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; color: #0f172a; }
+                    .header { text-align: center; border-bottom: 2px solid #0284c7; padding-bottom: 10px; margin-bottom: 15px; }
+                    .meta { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 12px; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                    th { background: #f1f5f9; padding: 7px; border: 1px solid #cbd5e1; font-size: 11px; text-transform: uppercase; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h2 style="margin:0;color:#0284c7;">MAHAMILON SOCIETY</h2>
+                    <div style="font-size:12px;color:#64748b;">Member Official Account Passbook Ledger</div>
+                </div>
+                <div class="meta">
+                    <div>
+                        <div><b>Member:</b> ${acc.member_name} (${acc.member_no})</div>
+                        <div><b>Account No:</b> ${acc.account_no}</div>
+                        <div><b>Scheme:</b> ${acc.scheme_name} (${(acc.scheme_type || '').toUpperCase()})</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div><b>Interest Rate:</b> ${acc.custom_interest_rate || acc.default_rate}% p.a.</div>
+                        <div><b>Current Balance:</b> ₹${parseFloat(acc.balance).toLocaleString('en-IN', {minimumFractionDigits: 2})}</div>
+                        <div><b>Printed On:</b> ${new Date().toLocaleString()}</div>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date & Time</th>
+                            <th>Reference</th>
+                            <th>Description</th>
+                            <th style="text-align:right;">Deposit (Cr)</th>
+                            <th style="text-align:right;">Withdrawal (Dr)</th>
+                            <th style="text-align:right;">Running Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml || '<tr><td colspan="6" style="text-align:center;padding:15px;">No transactions recorded.</td></tr>'}
+                    </tbody>
+                </table>
+            </body>
+            </html>
+        `);
+        printWin.document.close();
+        printWin.focus();
+        setTimeout(() => { printWin.print(); }, 400);
     }
 
 </script>
@@ -4679,52 +5000,106 @@
         </div>
     </div>
 
-    <!-- ================= RD SCHEDULE & PASSBOOK MODAL ================= -->
+    <!-- ================= REAL-TIME FD/RD PASSBOOK & SCHEDULE MODAL ================= -->
     <div id="rdScheduleModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); z-index: 9999; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px);">
-        <div style="background: white; border-radius: 12px; width: 100%; max-width: 860px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25); border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
+        <div style="background: white; border-radius: 12px; width: 100%; max-width: 960px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25); border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
             <div style="padding: 16px 22px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border-top-left-radius: 12px; border-top-right-radius: 12px;">
                 <div>
-                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #0284c7;" id="schedModalTitle">RD Installment Passbook & Schedule</h3>
-                    <span class="muted" style="font-size: 11.5px;" id="schedModalSubtitle">Complete payment schedule, status breakdown, and installment tracking</span>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: #0284c7;" id="schedModalTitle">Real-Time Passbook & Schedule</h3>
+                    <span class="muted" style="font-size: 11.5px;" id="schedModalSubtitle">Real-time ledger entries, credit/debit movements, running balance, and installment tracking</span>
                 </div>
-                <button type="button" onclick="closeRdScheduleModal()" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer; line-height: 1;">&times;</button>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button type="button" onclick="printRealtimePassbook()" class="button" style="padding: 5px 12px; font-size: 11.5px; background: #0284c7; color: white; border: none; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Print Official Account Passbook">
+                        <i class="bi bi-printer"></i> Print Passbook
+                    </button>
+                    <button type="button" onclick="closeRdScheduleModal()" style="background: none; border: none; font-size: 24px; color: #64748b; cursor: pointer; line-height: 1;">&times;</button>
+                </div>
             </div>
 
             <div style="padding: 20px; overflow-y: auto;">
                 <!-- Summary Stats Card -->
-                <div id="schedSummaryBox" style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;">
+                <div id="schedSummaryBox" style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 14px 18px; margin-bottom: 14px;">
                     <!-- Filled dynamically via JS -->
                 </div>
 
-                <!-- Filter tabs -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; gap: 6px;">
-                        <button type="button" class="button sched-tab active" onclick="filterScheduleStatus('all', this)" style="padding: 4px 10px; font-size: 11px; background: #0284c7; color: white;">All (<span id="countAll">0</span>)</button>
-                        <button type="button" class="button sched-tab" onclick="filterScheduleStatus('paid', this)" style="padding: 4px 10px; font-size: 11px;">Paid (<span id="countPaid">0</span>)</button>
-                        <button type="button" class="button sched-tab" onclick="filterScheduleStatus('due', this)" style="padding: 4px 10px; font-size: 11px;">Due / Overdue (<span id="countDue">0</span>)</button>
-                        <button type="button" class="button sched-tab" onclick="filterScheduleStatus('scheduled', this)" style="padding: 4px 10px; font-size: 11px;">Scheduled (<span id="countScheduled">0</span>)</button>
+                <!-- RD Dues Alert Box (Visible when due > 0) -->
+                <div id="schedDuesAlertBox" style="display: none; background: #fef2f2; border: 1.5px solid #fca5a5; border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; color: #991b1b; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <i class="bi bi-exclamation-triangle-fill" style="font-size: 20px; color: #dc2626;"></i>
+                        <div>
+                            <b style="font-size: 13px;" id="schedDuesAlertTitle">Overdue RD Installments Detected</b>
+                            <div style="font-size: 11.5px; color: #7f1d1d;" id="schedDuesAlertDesc"></div>
+                        </div>
                     </div>
-                    <div id="schedQuickPayBtnWrap"></div>
+                    <div id="schedDuesActionWrap"></div>
                 </div>
 
-                <!-- Installments Table -->
-                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
-                    <table style="margin: 0; width: 100%;">
-                        <thead style="position: sticky; top: 0; background: #0284c7; color: white;">
-                            <tr>
-                                <th style="color: white; padding: 8px 10px;">#</th>
-                                <th style="color: white; padding: 8px 10px;">Due Date</th>
-                                <th style="color: white; padding: 8px 10px;">Amount Due</th>
-                                <th style="color: white; padding: 8px 10px;">Fine</th>
-                                <th style="color: white; padding: 8px 10px;">Paid Amount</th>
-                                <th style="color: white; padding: 8px 10px;">Status</th>
-                                <th style="color: white; padding: 8px 10px;">Payment Date</th>
-                            </tr>
-                        </thead>
-                        <tbody id="schedTableBody">
-                            <tr><td colspan="7" style="text-align: center; padding: 20px;">Loading schedule...</td></tr>
-                        </tbody>
-                    </table>
+                <!-- View Navigation Tab Bar -->
+                <div style="display: flex; gap: 8px; margin-bottom: 14px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">
+                    <button type="button" id="tabBtnLedger" onclick="switchPassbookView('ledger')" class="button" style="padding: 6px 14px; font-size: 12px; font-weight: 700; background: #0284c7; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-journal-text"></i> Passbook Transactions (<span id="countTx">0</span>)
+                    </button>
+                    <button type="button" id="tabBtnSchedule" onclick="switchPassbookView('schedule')" class="button secondary" style="padding: 6px 14px; font-size: 12px; font-weight: 700; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-calendar3"></i> Installment Schedule (<span id="countSchedTab">0</span>)
+                    </button>
+                </div>
+
+                <!-- VIEW 1: PASSBOOK LEDGER TRANSACTIONS -->
+                <div id="passbookLedgerView">
+                    <div style="max-height: 420px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <table style="margin: 0; width: 100%;">
+                            <thead style="position: sticky; top: 0; background: #0f172a; color: white;">
+                                <tr>
+                                    <th style="color: white; padding: 8px 10px;">Date & Time</th>
+                                    <th style="color: white; padding: 8px 10px;">Ref / Tx ID</th>
+                                    <th style="color: white; padding: 8px 10px;">Description</th>
+                                    <th style="color: white; padding: 8px 10px; text-align: center;">Type</th>
+                                    <th style="color: white; padding: 8px 10px; text-align: right;">Amount</th>
+                                    <th style="color: white; padding: 8px 10px; text-align: right;">Running Balance</th>
+                                    <th style="color: white; padding: 8px 10px;">Staff</th>
+                                    <th style="color: white; padding: 8px 10px; text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="passbookLedgerTableBody">
+                                <tr><td colspan="8" style="text-align: center; padding: 20px;">Loading passbook entries...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- VIEW 2: RD INSTALLMENTS SCHEDULE -->
+                <div id="passbookScheduleView" style="display: none;">
+                    <!-- Filter tabs -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" class="button sched-tab active" onclick="filterScheduleStatus('all', this)" style="padding: 4px 10px; font-size: 11px; background: #0284c7; color: white;">All (<span id="countAll">0</span>)</button>
+                            <button type="button" class="button sched-tab" onclick="filterScheduleStatus('paid', this)" style="padding: 4px 10px; font-size: 11px;">Paid (<span id="countPaid">0</span>)</button>
+                            <button type="button" class="button sched-tab" onclick="filterScheduleStatus('due', this)" style="padding: 4px 10px; font-size: 11px;">Due / Overdue (<span id="countDue">0</span>)</button>
+                            <button type="button" class="button sched-tab" onclick="filterScheduleStatus('scheduled', this)" style="padding: 4px 10px; font-size: 11px;">Scheduled (<span id="countScheduled">0</span>)</button>
+                        </div>
+                        <div id="schedQuickPayBtnWrap"></div>
+                    </div>
+
+                    <!-- Installments Table -->
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        <table style="margin: 0; width: 100%;">
+                            <thead style="position: sticky; top: 0; background: #0284c7; color: white;">
+                                <tr>
+                                    <th style="color: white; padding: 8px 10px;">#</th>
+                                    <th style="color: white; padding: 8px 10px;">Due Date</th>
+                                    <th style="color: white; padding: 8px 10px;">Amount Due</th>
+                                    <th style="color: white; padding: 8px 10px;">Fine</th>
+                                    <th style="color: white; padding: 8px 10px;">Paid Amount</th>
+                                    <th style="color: white; padding: 8px 10px;">Status</th>
+                                    <th style="color: white; padding: 8px 10px;">Payment Date</th>
+                                    <th style="color: white; padding: 8px 10px; text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="schedTableBody">
+                                <tr><td colspan="8" style="text-align: center; padding: 20px;">Loading schedule...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

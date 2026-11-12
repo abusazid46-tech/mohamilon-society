@@ -24,11 +24,16 @@ Route::middleware('auth')->prefix('admin')->group(function(){
  Route::post('/withdrawals',[AdminController::class,'recordWithdrawal']);
  Route::post('/withdrawals/{id}/update',[AdminController::class,'updateTransaction']);
  Route::post('/transactions/{id}/update',[AdminController::class,'updateTransaction']);
+ Route::post('/transactions/{id}/delete',[AdminController::class,'deleteLedgerTransaction']);
  Route::post('/fd',[AdminController::class,'createFd']);
+ Route::post('/fd/{id}/delete',[AdminController::class,'deleteFd']);
  Route::post('/rd',[AdminController::class,'createRd']);
+ Route::post('/rd/{id}/delete',[AdminController::class,'deleteRd']);
  Route::post('/rd-installments/{id}/pay',[AdminController::class,'payRdInstallment']);
+ Route::post('/rd-installments/{id}/delete',[AdminController::class,'deleteRdInstallmentPayment']);
  Route::post('/accounts/{id}/rd-advance-pay',[AdminController::class,'payRdAdvance']);
  Route::get('/accounts/{id}/rd-schedule',[AdminController::class,'getRdSchedule']);
+ Route::get('/accounts/{id}/passbook',[AdminController::class,'getAccountPassbook']);
  Route::get('/accounts/{id}/fd-certificate',[AdminController::class,'viewFdCertificate']);
  Route::get('/accounts/{id}/fd-certificate/download',[AdminController::class,'downloadFdCertificate']);
  Route::post('/bank-accounts',[AdminController::class,'createBankAccount']);
@@ -36,6 +41,7 @@ Route::middleware('auth')->prefix('admin')->group(function(){
  Route::post('/expenses',[AdminController::class,'recordExpense']);
  Route::get('/receipts/{id}/view',[AdminController::class,'viewReceipt']);
  Route::get('/receipts/{id}/download',[AdminController::class,'downloadReceipt']);
+ Route::post('/receipts/{id}/delete',[AdminController::class,'deleteReceiptTransaction']);
  Route::get('/statements',[AdminController::class,'viewStatement']);
  Route::get('/statements/{id}/print',[AdminController::class,'printStatement']);
  Route::get('/statements/{id}/export',[AdminController::class,'exportStatement']);

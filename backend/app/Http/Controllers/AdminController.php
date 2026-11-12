@@ -259,6 +259,21 @@ class AdminController extends Controller
             }
         }
 
+        // Real-time synchronization of RD dues and overdue statuses
+        FinancialAutomation::syncRdDues();
+
+        $rdDueSummary = DB::table('rd_installments')
+            ->whereIn('status', ['due', 'overdue', 'partial'])
+            ->selectRaw('COUNT(*) as due_count, COALESCE(SUM(amount_due + penalty_due - paid_amount), 0) as total_due_amount, SUM(CASE WHEN status="overdue" THEN 1 ELSE 0 END) as overdue_count')
+            ->first();
+
+        $rdDuesMap = DB::table('rd_installments')
+            ->whereIn('status', ['due', 'overdue', 'partial'])
+            ->select('account_id', DB::raw('COALESCE(SUM(amount_due + penalty_due - paid_amount), 0) as total_due'), DB::raw('COUNT(*) as due_count'))
+            ->groupBy('account_id')
+            ->get()
+            ->keyBy('account_id');
+
         return view('admin.dashboard', [
             'permissions' => $permissions, 'permissionDefinitions' => StaffPermissions::DEFINITIONS,
             'metrics' => [
@@ -269,6 +284,9 @@ class AdminController extends Controller
                 'pending_loans' => DB::table('loan_applications')->whereIn('status', ['submitted','under_review'])->count(),
                 'pending_repayments' => DB::table('loan_repayments')->where('status','submitted')->count(),
                 'overdue_installments' => DB::table('loan_installments')->where('status','overdue')->count(),
+                'rd_due_amount' => (float) ($rdDueSummary->total_due_amount ?? 0),
+                'rd_due_count' => (int) ($rdDueSummary->due_count ?? 0),
+                'rd_overdue_count' => (int) ($rdDueSummary->overdue_count ?? 0),
                 'transactions' => DB::table('ledger_entries')->where('status', 'posted')->count(),
                 'total_loans' => DB::table('loan_applications')->whereIn('status',['approved','disbursed','closed'])->sum('sanctioned_amount'),
                 'outstanding_loans' => DB::table('loan_applications')->whereIn('status',['approved','disbursed'])->sum('outstanding_principal'),
@@ -365,7 +383,13 @@ class AdminController extends Controller
             'rdAccounts' => DB::table('accounts')->join('schemes','schemes.id','=','accounts.scheme_id')
                 ->join('members','members.id','=','accounts.member_id')->join('users','users.id','=','members.user_id')
                 ->where('schemes.type','rd')->select('accounts.*','users.name','members.member_no','schemes.annual_rate','schemes.name as scheme_name','schemes.deposit_frequency')
-                ->latest('accounts.id')->limit(100)->get(),
+                ->latest('accounts.id')->limit(100)->get()
+                ->map(function ($rd) use ($rdDuesMap) {
+                    $dueInfo = $rdDuesMap->get($rd->id);
+                    $rd->total_due = $dueInfo ? (float)$dueInfo->total_due : 0.0;
+                    $rd->due_count = $dueInfo ? (int)$dueInfo->due_count : 0;
+                    return $rd;
+                }),
             'settings' => DB::table('society_settings')->pluck('value', 'key'),
             'auditLogs' => DB::table('audit_logs')->leftJoin('users','users.id','=','audit_logs.actor_id')
                 ->select('audit_logs.*','users.name as actor')->latest('audit_logs.id')->limit(30)->get(),
@@ -511,9 +535,13 @@ class AdminController extends Controller
         }
 
         $scheme = DB::table('schemes')->where('id', $data['scheme_id'])->where('active', true)->firstOrFail();
-        $shares = (int) ($data['share_count'] ?? 1);
-        $minimum = in_array($scheme->code, ['SAVINGS','RD-MONTHLY'], true) ? 500 * $shares : (float) $scheme->minimum_amount;
-        abort_if((float) $data['opening_deposit'] < $minimum, 422, 'Opening deposit is below the required minimum.');
+        $shares = max(1, (int) ($data['share_count'] ?? 1));
+        $calculatedShareDeposit = $shares * 500;
+        if (empty($data['opening_deposit']) || (in_array($scheme->type, ['savings', 'rd'], true) && (float) $data['opening_deposit'] < $calculatedShareDeposit)) {
+            $data['opening_deposit'] = $calculatedShareDeposit;
+        }
+        $minimum = in_array($scheme->code, ['SAVINGS','RD-MONTHLY'], true) ? $calculatedShareDeposit : (float) $scheme->minimum_amount;
+        abort_if((float) $data['opening_deposit'] < $minimum, 422, "Opening deposit is below the required minimum (₹{$minimum} for {$shares} share(s)).");
         $canApprove = ! $isNewApplicant && StaffPermissions::allows($request->user(), 'account.approve');
         $accountNo = $this->accountNumber();
 
@@ -2067,6 +2095,8 @@ class AdminController extends Controller
 
     public function getRdSchedule(int $id)
     {
+        FinancialAutomation::syncRdDues();
+
         $account = DB::table('accounts')
             ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
             ->join('members', 'members.id', '=', 'accounts.member_id')
@@ -2091,7 +2121,9 @@ class AdminController extends Controller
 
         $paidCount = $installments->where('status', 'paid')->count();
         $totalCount = $installments->count();
-        $dueCount = $installments->whereIn('status', ['due', 'overdue'])->count();
+        $dueList = $installments->whereIn('status', ['due', 'overdue', 'partial']);
+        $dueCount = $dueList->count();
+        $totalDueAmount = $dueList->sum(fn($i) => (float)$i->amount_due + (float)$i->penalty_due - (float)$i->paid_amount);
         $totalPaidAmount = $installments->where('status', 'paid')->sum('paid_amount');
         $nextUnpaid = $installments->firstWhere('status', '!==', 'paid');
 
@@ -2103,6 +2135,7 @@ class AdminController extends Controller
                 'paid_count' => $paidCount,
                 'remaining_count' => $totalCount - $paidCount,
                 'due_count' => $dueCount,
+                'total_due_amount' => (float) $totalDueAmount,
                 'total_paid_amount' => (float) $totalPaidAmount,
                 'target_amount' => (float) $account->maturity_amount,
                 'current_balance' => (float) $account->balance,
@@ -2117,6 +2150,291 @@ class AdminController extends Controller
                 ] : null,
             ]
         ]);
+    }
+
+    public function getAccountPassbook(int $id)
+    {
+        FinancialAutomation::syncRdDues();
+
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->join('members', 'members.id', '=', 'accounts.member_id')
+            ->join('users', 'users.id', '=', 'members.user_id')
+            ->where('accounts.id', $id)
+            ->select(
+                'accounts.*',
+                'schemes.name as scheme_name',
+                'schemes.type as scheme_type',
+                'schemes.deposit_frequency',
+                'schemes.annual_rate as default_rate',
+                'schemes.code as scheme_code',
+                'users.name as member_name',
+                'users.phone',
+                'users.email',
+                'members.member_no',
+                'members.address'
+            )
+            ->firstOrFail();
+
+        // Fetch all posted ledger entries in chronological order
+        $ledgerEntries = DB::table('ledger_entries')
+            ->leftJoin('users', 'users.id', '=', 'ledger_entries.created_by')
+            ->where('ledger_entries.account_id', $id)
+            ->where('ledger_entries.status', 'posted')
+            ->select('ledger_entries.*', 'users.name as created_by_name')
+            ->orderBy('ledger_entries.posted_at', 'asc')
+            ->orderBy('ledger_entries.id', 'asc')
+            ->get();
+
+        // Calculate running balance accurately
+        $runningBalance = 0.0;
+        $totalCredits = 0.0;
+        $totalDebits = 0.0;
+
+        $transactions = $ledgerEntries->map(function ($entry) use (&$runningBalance, &$totalCredits, &$totalDebits) {
+            $amt = (float) $entry->amount;
+            if ($entry->direction === 'credit') {
+                $runningBalance += $amt;
+                $totalCredits += $amt;
+            } else {
+                $runningBalance -= $amt;
+                $totalDebits += $amt;
+            }
+            $entry->running_balance = round($runningBalance, 2);
+            return $entry;
+        });
+
+        // Receipts linked to this account
+        $receipts = DB::table('receipts')
+            ->where('account_id', $id)
+            ->latest('id')
+            ->get();
+
+        // If RD account, fetch installments
+        $installments = collect();
+        $rdSummary = null;
+        if ($account->scheme_type === 'rd') {
+            $installments = DB::table('rd_installments')
+                ->where('account_id', $id)
+                ->orderBy('installment_no', 'asc')
+                ->get();
+
+            $paidCount = $installments->where('status', 'paid')->count();
+            $totalCount = $installments->count();
+            $dueList = $installments->whereIn('status', ['due', 'overdue', 'partial']);
+            $dueCount = $dueList->count();
+            $totalDueAmount = $dueList->sum(fn($i) => (float)$i->amount_due + (float)$i->penalty_due - (float)$i->paid_amount);
+            $totalPaidAmount = $installments->where('status', 'paid')->sum('paid_amount');
+            $nextUnpaid = $installments->firstWhere('status', '!==', 'paid');
+
+            $rdSummary = [
+                'total_count' => $totalCount,
+                'paid_count' => $paidCount,
+                'remaining_count' => $totalCount - $paidCount,
+                'due_count' => $dueCount,
+                'total_due_amount' => (float) $totalDueAmount,
+                'total_paid_amount' => (float) $totalPaidAmount,
+                'target_amount' => (float) $account->maturity_amount,
+                'current_balance' => (float) $account->balance,
+                'commitment' => (float) $account->monthly_commitment,
+                'frequency' => $account->deposit_frequency,
+                'next_installment' => $nextUnpaid ? [
+                    'id' => $nextUnpaid->id,
+                    'installment_no' => $nextUnpaid->installment_no,
+                    'due_on' => $nextUnpaid->due_on,
+                    'amount_due' => (float) $nextUnpaid->amount_due,
+                    'status' => $nextUnpaid->status,
+                ] : null,
+            ];
+        }
+
+        return response()->json([
+            'account' => $account,
+            'transactions' => $transactions->reverse()->values(),
+            'transactions_chronological' => $transactions->values(),
+            'receipts' => $receipts,
+            'installments' => $installments,
+            'rd_summary' => $rdSummary,
+            'totals' => [
+                'credits' => round($totalCredits, 2),
+                'debits' => round($totalDebits, 2),
+                'live_balance' => (float) $account->balance,
+                'calculated_balance' => round($runningBalance, 2),
+            ]
+        ]);
+    }
+
+    public function deleteFd(Request $request, int $id)
+    {
+        $this->permit($request, 'account.reject');
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->where('accounts.id', $id)
+            ->where('schemes.type', 'fd')
+            ->select('accounts.*', 'schemes.name as scheme_name')
+            ->firstOrFail();
+
+        DB::transaction(function () use ($account, $request, $id) {
+            DB::table('cash_ledger_entries')->where('source_type', 'account')->where('source_id', $id)->delete();
+            DB::table('receipts')->where('account_id', $id)->delete();
+            DB::table('ledger_entries')->where('account_id', $id)->delete();
+            DB::table('interest_postings')->where('account_id', $id)->delete();
+            DB::table('account_closures')->where('account_id', $id)->delete();
+            DB::table('accounts')->where('id', $id)->delete();
+
+            $this->audit($request, 'fd.deleted', 'account', $id, (array)$account, ['deleted' => true]);
+        });
+
+        return back()->with('ok', "Fixed Deposit {$account->account_no} (Cert: " . ($account->certificate_no ?: 'N/A') . ") deleted successfully.");
+    }
+
+    public function deleteRd(Request $request, int $id)
+    {
+        $this->permit($request, 'account.reject');
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->where('accounts.id', $id)
+            ->where('schemes.type', 'rd')
+            ->select('accounts.*', 'schemes.name as scheme_name')
+            ->firstOrFail();
+
+        DB::transaction(function () use ($account, $request, $id) {
+            DB::table('rd_installments')->where('account_id', $id)->delete();
+            DB::table('cash_ledger_entries')->where('source_type', 'account')->where('source_id', $id)->delete();
+            DB::table('receipts')->where('account_id', $id)->delete();
+            DB::table('ledger_entries')->where('account_id', $id)->delete();
+            DB::table('interest_postings')->where('account_id', $id)->delete();
+            DB::table('account_closures')->where('account_id', $id)->delete();
+            DB::table('accounts')->where('id', $id)->delete();
+
+            $this->audit($request, 'rd.deleted', 'account', $id, (array)$account, ['deleted' => true]);
+        });
+
+        return back()->with('ok', "Recurring Deposit {$account->account_no} deleted successfully.");
+    }
+
+    public function deleteRdInstallmentPayment(Request $request, int $id)
+    {
+        $this->permit($request, 'deposit.create');
+        $installment = DB::table('rd_installments')->where('id', $id)->firstOrFail();
+        abort_unless($installment->status === 'paid', 422, 'Only paid installments can be reversed/deleted.');
+
+        $account = DB::table('accounts')->where('id', $installment->account_id)->firstOrFail();
+        $paidAmount = (float) $installment->paid_amount;
+
+        DB::transaction(function () use ($installment, $account, $paidAmount, $request, $id) {
+            // Decrement account balance
+            DB::table('accounts')->where('id', $account->id)->decrement('balance', min((float)$account->balance, $paidAmount), ['updated_at' => now()]);
+
+            // Revert installment status
+            $today = Carbon::today();
+            $dueOn = Carbon::parse($installment->due_on);
+            $newStatus = $dueOn->lt($today) ? 'overdue' : ($dueOn->equalTo($today) ? 'due' : 'scheduled');
+
+            DB::table('rd_installments')->where('id', $id)->update([
+                'paid_amount' => 0,
+                'status' => $newStatus,
+                'paid_at' => null,
+                'updated_at' => now(),
+            ]);
+
+            // Remove corresponding ledger entry or post reversal
+            $ledger = DB::table('ledger_entries')
+                ->where('account_id', $account->id)
+                ->where('direction', 'credit')
+                ->where('description', 'like', "%RD Installment #{$installment->installment_no}%")
+                ->latest('id')
+                ->first();
+            if ($ledger) {
+                DB::table('ledger_entries')->where('id', $ledger->id)->delete();
+            } else {
+                $txRef = SequenceService::nextTransactionRef();
+                DB::table('ledger_entries')->insert([
+                    'reference' => $txRef,
+                    'account_id' => $account->id,
+                    'direction' => 'debit',
+                    'amount' => $paidAmount,
+                    'description' => "Reversal: RD Installment #{$installment->installment_no} for {$account->account_no}",
+                    'status' => 'posted',
+                    'posted_at' => now(),
+                    'created_by' => $request->user()->id,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            // Remove cash ledger entry
+            $cashEntry = DB::table('cash_ledger_entries')
+                ->where('source_type', 'account')
+                ->where('source_id', $account->id)
+                ->where('category', 'rd_installment')
+                ->latest('id')
+                ->first();
+            if ($cashEntry) {
+                DB::table('cash_ledger_entries')->where('id', $cashEntry->id)->delete();
+            }
+
+            $this->audit($request, 'rd.installment_deleted', 'rd_installment', $id, (array)$installment, ['paid_amount' => 0, 'status' => $newStatus]);
+        });
+
+        return back()->with('ok', "RD Installment #{$installment->installment_no} payment reversed successfully.");
+    }
+
+    public function deleteReceiptTransaction(Request $request, int $id)
+    {
+        $this->permit($request, 'deposit.create');
+        $receipt = DB::table('receipts')->where('id', $id)->firstOrFail();
+
+        DB::transaction(function () use ($receipt, $request, $id) {
+            if ($receipt->account_id) {
+                $amount = (float) $receipt->amount;
+                if (in_array($receipt->purpose, ['deposit', 'opening_deposit', 'fd_deposit', 'rd_installment'], true)) {
+                    DB::table('accounts')->where('id', $receipt->account_id)->decrement('balance', min((float)DB::table('accounts')->where('id', $receipt->account_id)->value('balance'), $amount), ['updated_at' => now()]);
+                }
+            }
+
+            DB::table('cash_ledger_entries')
+                ->where('source_type', 'account')
+                ->where('source_id', $receipt->account_id)
+                ->where('amount', $receipt->amount)
+                ->latest('id')
+                ->limit(1)
+                ->delete();
+
+            DB::table('receipts')->where('id', $id)->delete();
+            $this->audit($request, 'receipt.deleted', 'receipt', $id, (array)$receipt, ['deleted' => true]);
+        });
+
+        return back()->with('ok', "Receipt #{$receipt->receipt_no} deleted successfully.");
+    }
+
+    public function deleteLedgerTransaction(Request $request, int $id)
+    {
+        $this->permit($request, 'transaction.create');
+        $entry = DB::table('ledger_entries')->where('id', $id)->firstOrFail();
+        $account = DB::table('accounts')->where('id', $entry->account_id)->firstOrFail();
+
+        DB::transaction(function () use ($entry, $account, $request, $id) {
+            $amount = (float) $entry->amount;
+            if ($entry->direction === 'credit') {
+                DB::table('accounts')->where('id', $account->id)->decrement('balance', min((float)$account->balance, $amount), ['updated_at' => now()]);
+            } else {
+                DB::table('accounts')->where('id', $account->id)->increment('balance', $amount, ['updated_at' => now()]);
+            }
+
+            DB::table('cash_ledger_entries')
+                ->where('source_type', 'account')
+                ->where('source_id', $account->id)
+                ->where('amount', $entry->amount)
+                ->latest('id')
+                ->limit(1)
+                ->delete();
+
+            DB::table('ledger_entries')->where('id', $id)->delete();
+            $this->audit($request, 'transaction.deleted', 'ledger_entry', $id, (array)$entry, ['deleted' => true]);
+        });
+
+        return back()->with('ok', "Transaction {$entry->reference} deleted and balance updated.");
     }
 
     public function viewFdCertificate(int $id)
@@ -2611,11 +2929,30 @@ class AdminController extends Controller
             ->latest('accounts.id')
             ->get();
 
+        FinancialAutomation::syncRdDues();
+
         $savingsAccounts = $accounts->where('scheme_type', 'savings')->values();
         $fdAccounts = $accounts->where('scheme_type', 'fd')->values();
         $rdAccounts = $accounts->where('scheme_type', 'rd')->values();
 
         $accountIds = $accounts->pluck('id')->all();
+
+        $memberRdDuesMap = count($accountIds) > 0
+            ? DB::table('rd_installments')
+                ->whereIn('account_id', $accountIds)
+                ->whereIn('status', ['due', 'overdue', 'partial'])
+                ->select('account_id', DB::raw('COALESCE(SUM(amount_due + penalty_due - paid_amount), 0) as total_due'), DB::raw('COUNT(*) as due_count'))
+                ->groupBy('account_id')
+                ->get()
+                ->keyBy('account_id')
+            : collect();
+
+        $rdAccounts = $rdAccounts->map(function ($rd) use ($memberRdDuesMap) {
+            $dueInfo = $memberRdDuesMap->get($rd->id);
+            $rd->total_due = $dueInfo ? (float)$dueInfo->total_due : 0.0;
+            $rd->due_count = $dueInfo ? (int)$dueInfo->due_count : 0;
+            return $rd;
+        });
 
         $rdInstallments = count($accountIds) > 0
             ? DB::table('rd_installments')->join('accounts', 'accounts.id', '=', 'rd_installments.account_id')

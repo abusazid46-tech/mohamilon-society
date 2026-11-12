@@ -13,6 +13,7 @@ final class FinancialAutomation
         return [
             'interest_postings' => self::postDueInterest(),
             'overdue_installments' => self::markOverdueInstallments(),
+            'rd_dues' => self::syncRdDues(),
             'closures_available' => self::activateClosureWithdrawals(),
             'emergency_alerts' => self::alertEmergencyLoans(),
         ];
@@ -83,6 +84,8 @@ final class FinancialAutomation
     public static function markOverdueInstallments(): int
     {
         $count = 0;
+        self::syncRdDues();
+
         DB::table('loan_installments')->whereDate('due_on','<=',today())->where('status','scheduled')
             ->update(['status'=>'due','updated_at'=>now()]);
         $installments = DB::table('loan_installments')->join('loan_applications','loan_applications.id','=','loan_installments.loan_id')
@@ -100,6 +103,24 @@ final class FinancialAutomation
             $count++;
         }
         return $count;
+    }
+
+    public static function syncRdDues(): array
+    {
+        $markedDue = DB::table('rd_installments')
+            ->whereDate('due_on', '<=', today())
+            ->where('status', 'scheduled')
+            ->update(['status' => 'due', 'updated_at' => now()]);
+
+        $markedOverdue = DB::table('rd_installments')
+            ->whereDate('due_on', '<', today())
+            ->whereIn('status', ['due', 'partial'])
+            ->update(['status' => 'overdue', 'updated_at' => now()]);
+
+        return [
+            'marked_due' => $markedDue,
+            'marked_overdue' => $markedOverdue,
+        ];
     }
 
     public static function activateClosureWithdrawals(): int
