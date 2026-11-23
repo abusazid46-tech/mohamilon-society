@@ -8,6 +8,7 @@ final class StaffPermissions
 {
     public const DEFINITIONS = [
         'member.approve' => 'Approve or reject members',
+        'member.edit' => 'Edit member details and reset security credentials',
         'kyc.approve' => 'Approve or reject KYC',
         'account.create' => 'Create member accounts',
         'account.approve' => 'Approve account requests',
@@ -35,8 +36,8 @@ final class StaffPermissions
     {
         return match ($role) {
             'super_admin' => array_keys(self::DEFINITIONS),
-            'manager' => ['member.approve','kyc.approve','account.create','account.approve','account.reject','payment.accept','transaction.create','deposit.create','withdrawal.create','loan.offer','loan.approve','loan.reject','loan.disburse','loan.repayment','loan.fine','bank.transfer','interest.manage','account.close','cash.manage','profit_loss.manage','reports.view'],
-            'secretary' => ['member.approve','kyc.approve','deposit.create','reports.view'],
+            'manager' => ['member.approve','member.edit','kyc.approve','account.create','account.approve','account.reject','payment.accept','transaction.create','deposit.create','withdrawal.create','loan.offer','loan.approve','loan.reject','loan.disburse','loan.repayment','loan.fine','bank.transfer','interest.manage','account.close','cash.manage','profit_loss.manage','reports.view'],
+            'secretary' => ['member.approve','member.edit','kyc.approve','deposit.create','reports.view'],
             'president' => ['loan.offer','loan.approve','loan.reject','reports.view'],
             'agent' => ['deposit.create','loan.repayment','reports.view'],
             default => [],

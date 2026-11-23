@@ -3389,7 +3389,12 @@ class AdminController extends Controller
 
     public function resetMemberMpin(Request $request, int $id)
     {
-        $this->permit($request, 'member.edit');
+        $this->staff($request);
+        if (!in_array($request->user()->role, ['super_admin', 'manager', 'secretary', 'president'], true) &&
+            !StaffPermissions::allows($request->user(), 'member.approve') &&
+            !StaffPermissions::allows($request->user(), 'member.edit')) {
+            abort(403, 'This action is not assigned to your staff account.');
+        }
         $data = $request->validate([
             'mpin' => 'required|digits:6',
         ]);
@@ -3407,7 +3412,11 @@ class AdminController extends Controller
 
     public function resetUserMpin(Request $request, int $id)
     {
-        $this->permit($request, 'member.edit');
+        $this->staff($request);
+        if (!in_array($request->user()->role, ['super_admin', 'manager'], true) &&
+            !StaffPermissions::allows($request->user(), 'member.edit')) {
+            abort(403, 'This action is not assigned to your staff account.');
+        }
         $data = $request->validate([
             'mpin' => 'required|digits:6',
         ]);
