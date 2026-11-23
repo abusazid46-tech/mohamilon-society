@@ -136,6 +136,9 @@ function AppContent() {
     loanType: "personal",
     emiFrequency: "monthly"
   });
+  const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
+  const [regErrors, setRegErrors] = useState<Record<string, string>>({});
+  const [authErrorMessage, setAuthErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     Notifications.requestPermissionsAsync().catch(() => undefined);
@@ -161,51 +164,121 @@ function AppContent() {
   };
 
   const login = async () => {
-    const hasPhone = loginForm.phone.trim().length >= 10;
-    if (!hasPhone) {
-      Alert.alert("Check login details", "Enter your registered mobile number.");
+    setAuthErrorMessage(null);
+    const errs: Record<string, string> = {};
+    const cleanPhone = loginForm.phone.trim();
+    if (!cleanPhone) {
+      errs.phone = "Mobile number is required";
+    } else if (!/^[6-9][0-9]{9}$/.test(cleanPhone)) {
+      errs.phone = "Enter valid 10-digit mobile number (e.g. 9876543210)";
+    }
+    if (!loginForm.otp.trim()) {
+      errs.otp = "6-digit MPIN is required";
+    } else if (loginForm.otp.trim().length !== 6) {
+      errs.otp = "MPIN must be exactly 6 digits";
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setLoginErrors(errs);
       return;
     }
-    if (!loginForm.otp.trim()) { Alert.alert("MPIN required", "Enter your six-digit MPIN."); return; }
-    try { await api.login(loginForm.phone.trim(), loginForm.otp.trim()); setIsLoggedIn(true); await refreshData(); }
-    catch (error) { Alert.alert("Login failed", error instanceof ApiError ? error.message : "Unable to reach the society server."); }
+    setLoginErrors({});
+
+    try {
+      await api.login(cleanPhone, loginForm.otp.trim());
+      setIsLoggedIn(true);
+      await refreshData();
+    } catch (error) {
+      const msg = error instanceof ApiError ? error.message : "Unable to reach the society server.";
+      setAuthErrorMessage(msg);
+      Alert.alert("Login failed", msg);
+    }
   };
 
   const register = async () => {
-    const requiredFields = [
-      registrationForm.fullName,
-      registrationForm.phone,
-      registrationForm.aadhaar,
-      registrationForm.address,
-      registrationForm.nominee,
-      registrationForm.mpin
-    ];
-    const hasMissing = requiredFields.some((value) => value.trim().length === 0);
-    if (hasMissing || registrationForm.phone.trim().length < 10) {
-      Alert.alert(
-        "Complete registration",
-        "Enter name, mobile, Aadhaar, address, nominee and MPIN."
-      );
-      return;
+    setAuthErrorMessage(null);
+    const errs: Record<string, string> = {};
+    const cleanName = registrationForm.fullName.trim();
+    const cleanPhone = registrationForm.phone.trim();
+    const cleanAadhaar = registrationForm.aadhaar.trim();
+    const cleanPan = registrationForm.pan.trim().toUpperCase();
+    const cleanAddress = registrationForm.address.trim();
+    const cleanNominee = registrationForm.nominee.trim();
+    const cleanMpin = registrationForm.mpin.trim();
+
+    if (!cleanName) errs.fullName = "Full name is required";
+    else if (cleanName.length < 3) errs.fullName = "Full name must be at least 3 characters";
+
+    if (!cleanPhone) errs.phone = "Mobile number is required";
+    else if (!/^[6-9][0-9]{9}$/.test(cleanPhone)) errs.phone = "Enter valid 10-digit mobile (starts with 6-9)";
+
+    if (!cleanAadhaar) errs.aadhaar = "12-digit Aadhaar number is required";
+    else if (!/^[0-9]{12}$/.test(cleanAadhaar)) errs.aadhaar = "Aadhaar must be exactly 12 numeric digits";
+
+    if (cleanPan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(cleanPan)) {
+      errs.pan = "PAN must match standard format (e.g. ABCDE1234F)";
     }
 
-    try { const result=await api.register({name:registrationForm.fullName.trim(),phone:registrationForm.phone.trim(),aadhaar:registrationForm.aadhaar.trim(),pan:registrationForm.pan.trim().toUpperCase()||undefined,address:registrationForm.address.trim(),nominee_name:registrationForm.nominee.trim(),occupation:registrationForm.occupation.trim()||undefined,mpin:registrationForm.mpin.trim()}); Alert.alert("Registration submitted",`${result.message}\nMember number: ${result.member_no}`); }
-    catch(error){ Alert.alert("Registration failed",error instanceof ApiError?error.message:"Unable to reach the society server."); return; }
-    setLoginForm((prev) => ({
-      ...prev,
-      phone: registrationForm.phone
-    }));
-    setRegistrationForm({
-      fullName: "",
-      phone: "",
-      aadhaar: "",
-      pan: "",
-      address: "",
-      nominee: "",
-      occupation: "",
-      mpin: ""
-    });
-    setAuthMode("login");
+    if (!cleanAddress) errs.address = "Permanent residential address is required";
+    else if (cleanAddress.length < 5) errs.address = "Please enter complete street/village address";
+
+    if (!cleanNominee) errs.nominee = "Nominee full name is required";
+    else if (cleanNominee.length < 3) errs.nominee = "Nominee name must be at least 3 characters";
+
+    if (!cleanMpin) errs.mpin = "6-digit security MPIN is required";
+    else if (!/^[0-9]{6}$/.test(cleanMpin)) errs.mpin = "MPIN must be exactly 6 numeric digits";
+
+    if (Object.keys(errs).length > 0) {
+      setRegErrors(errs);
+      const firstField = Object.values(errs)[0];
+      Alert.alert("Please complete the form", firstField);
+      return;
+    }
+    setRegErrors({});
+
+    try {
+      const result = await api.register({
+        name: cleanName,
+        phone: cleanPhone,
+        aadhaar: cleanAadhaar,
+        pan: cleanPan || undefined,
+        address: cleanAddress,
+        nominee_name: cleanNominee,
+        occupation: registrationForm.occupation.trim() || undefined,
+        mpin: cleanMpin
+      });
+      Alert.alert("Registration submitted", `${result.message}\nMember number: ${result.member_no}`);
+      setLoginForm((prev) => ({
+        ...prev,
+        phone: cleanPhone
+      }));
+      setRegistrationForm({
+        fullName: "",
+        phone: "",
+        aadhaar: "",
+        pan: "",
+        address: "",
+        nominee: "",
+        occupation: "",
+        mpin: ""
+      });
+      setAuthMode("login");
+    } catch (error) {
+      if (error instanceof ApiError && error.fields) {
+        const fieldErrors: Record<string, string> = {};
+        if (error.fields.phone) fieldErrors.phone = error.fields.phone[0];
+        if (error.fields.aadhaar) fieldErrors.aadhaar = error.fields.aadhaar[0];
+        if (error.fields.pan) fieldErrors.pan = error.fields.pan[0];
+        if (error.fields.name) fieldErrors.fullName = error.fields.name[0];
+        if (error.fields.mpin) fieldErrors.mpin = error.fields.mpin[0];
+        if (error.fields.address) fieldErrors.address = error.fields.address[0];
+        if (error.fields.nominee_name) fieldErrors.nominee = error.fields.nominee_name[0];
+        setRegErrors(fieldErrors);
+      }
+      const msg = error instanceof ApiError ? error.message : "Unable to reach the society server.";
+      setAuthErrorMessage(msg);
+      Alert.alert("Registration failed", msg);
+    }
   };
 
   const sendLocalNotification = async () => {
@@ -224,8 +297,12 @@ function AppContent() {
     const shares = Math.max(1, Number(accountForm.shares) || 1);
     const calculatedDeposit = shares * 500;
     const depositAmount = Number(accountForm.deposit) || calculatedDeposit;
-    if (!scheme || !depositAmount) {
-      Alert.alert("Complete request", "Choose a scheme and enter the opening deposit.");
+    if (!scheme) {
+      Alert.alert("Complete request", "Choose an account scheme.");
+      return;
+    }
+    if (depositAmount < calculatedDeposit) {
+      Alert.alert("Deposit too low", `Minimum opening deposit for ${shares} share(s) is ₹${calculatedDeposit.toLocaleString("en-IN")}.`);
       return;
     }
     try {
@@ -240,8 +317,38 @@ function AppContent() {
   };
 
   const submitLoan = async () => {
-    try { await api.applyLoan({loan_type:loanForm.loanType,emi_frequency:loanForm.emiFrequency,amount:Number(loanForm.amount),purpose:loanForm.purpose,monthly_income:Number(loanForm.income),tenure_months:Number(loanForm.tenure)}); await refreshData(); Alert.alert("Loan application submitted",loanForm.loanType==="emergency"?"Emergency request is due for decision within three days.":"Your application is now under review."); } catch(error){Alert.alert("Application failed",error instanceof ApiError?error.message:"Server unavailable");return;}
-    setLoanForm({ amount:"",purpose:"",income:"",tenure:"",loanType:"personal",emiFrequency:"monthly" });
+    if (!loanForm.amount || Number(loanForm.amount) <= 0) {
+      Alert.alert("Incomplete request", "Please enter requested loan amount.");
+      return;
+    }
+    if (!loanForm.purpose.trim()) {
+      Alert.alert("Incomplete request", "Please enter loan purpose.");
+      return;
+    }
+    if (!loanForm.income || Number(loanForm.income) <= 0) {
+      Alert.alert("Incomplete request", "Please enter monthly income.");
+      return;
+    }
+    if (!loanForm.tenure || Number(loanForm.tenure) <= 0) {
+      Alert.alert("Incomplete request", "Please enter preferred tenure in months.");
+      return;
+    }
+    try {
+      await api.applyLoan({
+        loan_type: loanForm.loanType,
+        emi_frequency: loanForm.emiFrequency,
+        amount: Number(loanForm.amount),
+        purpose: loanForm.purpose,
+        monthly_income: Number(loanForm.income),
+        tenure_months: Number(loanForm.tenure)
+      });
+      await refreshData();
+      Alert.alert("Loan application submitted", loanForm.loanType === "emergency" ? "Emergency request is due for decision within three days." : "Your application is now under review.");
+    } catch (error) {
+      Alert.alert("Application failed", error instanceof ApiError ? error.message : "Server unavailable");
+      return;
+    }
+    setLoanForm({ amount: "", purpose: "", income: "", tenure: "", loanType: "personal", emiFrequency: "monthly" });
   };
 
   const submitPayment = async (payment:any,utr:string) => {
@@ -268,13 +375,21 @@ function AppContent() {
     return (
       <AuthScreen
         mode={authMode}
-        setMode={setAuthMode}
+        setMode={(m) => {
+          setAuthMode(m);
+          setAuthErrorMessage(null);
+        }}
         loginForm={loginForm}
         setLoginForm={setLoginForm}
         registrationForm={registrationForm}
         setRegistrationForm={setRegistrationForm}
         onLogin={login}
         onRegister={register}
+        loginErrors={loginErrors}
+        setLoginErrors={setLoginErrors}
+        regErrors={regErrors}
+        setRegErrors={setRegErrors}
+        authErrorMessage={authErrorMessage}
       />
     );
   }
@@ -349,7 +464,12 @@ function AuthScreen({
   registrationForm,
   setRegistrationForm,
   onLogin,
-  onRegister
+  onRegister,
+  loginErrors,
+  setLoginErrors,
+  regErrors,
+  setRegErrors,
+  authErrorMessage
 }: {
   mode: AuthMode;
   setMode: (mode: AuthMode) => void;
@@ -359,6 +479,11 @@ function AuthScreen({
   setRegistrationForm: React.Dispatch<React.SetStateAction<RegistrationForm>>;
   onLogin: () => void;
   onRegister: () => void;
+  loginErrors: Record<string, string>;
+  setLoginErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  regErrors: Record<string, string>;
+  setRegErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  authErrorMessage: string | null;
 }) {
   return (
     <SafeAreaView style={styles.loginSafe} edges={["top","bottom","left","right"]}>
@@ -405,13 +530,23 @@ function AuthScreen({
           </View>
 
           {mode === "login" ? (
-            <LoginPanel form={loginForm} setForm={setLoginForm} onLogin={onLogin} />
+            <LoginPanel
+              form={loginForm}
+              setForm={setLoginForm}
+              onLogin={onLogin}
+              errors={loginErrors}
+              setErrors={setLoginErrors}
+              generalError={authErrorMessage}
+            />
           ) : (
             <RegistrationPanel
               form={registrationForm}
               setForm={setRegistrationForm}
               onRegister={onRegister}
               onBackToLogin={() => setMode("login")}
+              errors={regErrors}
+              setErrors={setRegErrors}
+              generalError={authErrorMessage}
             />
           )}
 
@@ -430,30 +565,50 @@ function AuthScreen({
 function LoginPanel({
   form,
   setForm,
-  onLogin
+  onLogin,
+  errors,
+  setErrors,
+  generalError
 }: {
   form: LoginForm;
   setForm: React.Dispatch<React.SetStateAction<LoginForm>>;
   onLogin: () => void;
+  errors: Record<string, string>;
+  setErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  generalError?: string | null;
 }) {
   return (
-          <View style={styles.loginPanel}>
-            <Text style={styles.panelTitleLarge}>Member Login</Text>
-            <FormInput
-              label="Registered mobile number"
-              value={form.phone}
-              keyboardType="phone-pad"
-              onChangeText={(phone) => setForm((prev) => ({ ...prev, phone }))}
-            />
-            <FormInput
-              label="OTP / MPIN"
-              value={form.otp}
-              keyboardType="numeric"
-              secureTextEntry
-              onChangeText={(otp) => setForm((prev) => ({ ...prev, otp }))}
-            />
-            <ActionButton label="Login" icon="log-in-outline" onPress={onLogin} />
-          </View>
+    <View style={styles.loginPanel}>
+      <Text style={styles.panelTitleLarge}>Member Login</Text>
+      {generalError ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={18} color={colors.red} />
+          <Text style={styles.errorBannerText}>{generalError}</Text>
+        </View>
+      ) : null}
+      <FormInput
+        label="Registered mobile number"
+        value={form.phone}
+        keyboardType="phone-pad"
+        error={errors.phone}
+        onChangeText={(phone) => {
+          setForm((prev) => ({ ...prev, phone }));
+          if (errors.phone) setErrors((prev) => ({ ...prev, phone: "" }));
+        }}
+      />
+      <FormInput
+        label="OTP / MPIN"
+        value={form.otp}
+        keyboardType="numeric"
+        secureTextEntry
+        error={errors.otp}
+        onChangeText={(otp) => {
+          setForm((prev) => ({ ...prev, otp }));
+          if (errors.otp) setErrors((prev) => ({ ...prev, otp: "" }));
+        }}
+      />
+      <ActionButton label="Login" icon="log-in-outline" onPress={onLogin} />
+    </View>
   );
 }
 
@@ -461,13 +616,29 @@ function RegistrationPanel({
   form,
   setForm,
   onRegister,
-  onBackToLogin
+  onBackToLogin,
+  errors,
+  setErrors,
+  generalError
 }: {
   form: RegistrationForm;
   setForm: React.Dispatch<React.SetStateAction<RegistrationForm>>;
   onRegister: () => void;
   onBackToLogin: () => void;
+  errors: Record<string, string>;
+  setErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  generalError?: string | null;
 }) {
+  const clearError = (field: string) => {
+    if (errors[field]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
+
   return (
     <View style={styles.loginPanel}>
       <View style={styles.registrationTitleRow}>
@@ -478,52 +649,91 @@ function RegistrationPanel({
         <Ionicons name="shield-checkmark-outline" size={28} color={colors.navy} />
       </View>
 
+      {generalError ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle" size={18} color={colors.red} />
+          <Text style={styles.errorBannerText}>{generalError}</Text>
+        </View>
+      ) : null}
+
       <FormInput
         label="Full name"
         value={form.fullName}
-        onChangeText={(fullName) => setForm((prev) => ({ ...prev, fullName }))}
+        error={errors.fullName}
+        onChangeText={(fullName) => {
+          setForm((prev) => ({ ...prev, fullName }));
+          clearError("fullName");
+        }}
         autoCapitalize="words"
       />
       <FormInput
         label="Mobile number"
         value={form.phone}
         keyboardType="phone-pad"
-        onChangeText={(phone) => setForm((prev) => ({ ...prev, phone }))}
+        error={errors.phone}
+        onChangeText={(phone) => {
+          setForm((prev) => ({ ...prev, phone }));
+          clearError("phone");
+        }}
       />
       <FormInput
         label="Aadhaar / ID number"
         value={form.aadhaar}
         keyboardType="numeric"
-        onChangeText={(aadhaar) => setForm((prev) => ({ ...prev, aadhaar }))}
+        error={errors.aadhaar}
+        onChangeText={(aadhaar) => {
+          setForm((prev) => ({ ...prev, aadhaar }));
+          clearError("aadhaar");
+        }}
       />
       <FormInput
-        label="PAN / tax ID"
+        label="PAN / tax ID (Optional)"
         value={form.pan}
         autoCapitalize="characters"
-        onChangeText={(pan) => setForm((prev) => ({ ...prev, pan }))}
+        error={errors.pan}
+        onChangeText={(pan) => {
+          setForm((prev) => ({ ...prev, pan }));
+          clearError("pan");
+        }}
       />
       <FormInput
         label="Current address"
         value={form.address}
-        onChangeText={(address) => setForm((prev) => ({ ...prev, address }))}
+        error={errors.address}
+        onChangeText={(address) => {
+          setForm((prev) => ({ ...prev, address }));
+          clearError("address");
+        }}
       />
       <FormInput
         label="Nominee name"
         value={form.nominee}
-        onChangeText={(nominee) => setForm((prev) => ({ ...prev, nominee }))}
+        error={errors.nominee}
+        onChangeText={(nominee) => {
+          setForm((prev) => ({ ...prev, nominee }));
+          clearError("nominee");
+        }}
         autoCapitalize="words"
       />
       <FormInput
-        label="Occupation"
+        label="Occupation (Optional)"
         value={form.occupation}
-        onChangeText={(occupation) => setForm((prev) => ({ ...prev, occupation }))}
+        error={errors.occupation}
+        onChangeText={(occupation) => {
+          setForm((prev) => ({ ...prev, occupation }));
+          clearError("occupation");
+        }}
       />
       <FormInput
-        label="Create MPIN"
+        label="Create MPIN (6 digits)"
         value={form.mpin}
         keyboardType="numeric"
         secureTextEntry
-        onChangeText={(mpin) => setForm((prev) => ({ ...prev, mpin }))}
+        error={errors.mpin}
+        onChangeText={(mpin) => {
+          setForm((prev) => ({ ...prev, mpin }));
+          clearError("mpin");
+        }}
       />
 
       <ActionButton label="Submit Registration" icon="person-add-outline" onPress={onRegister} />
@@ -937,6 +1147,7 @@ function AccountsScreen({
           label="Opening deposit (₹)"
           value={form.deposit}
           keyboardType="numeric"
+          error={Number(form.deposit) < (Math.max(1, parseInt(form.shares, 10) || 1) * 500) ? `Minimum deposit for ${form.shares || 1} share(s) is ₹${(Math.max(1, parseInt(form.shares, 10) || 1) * 500).toLocaleString("en-IN")}` : undefined}
           onChangeText={(deposit) => setForm((prev) => ({ ...prev, deposit }))}
         />
         <ActionButton label="Submit Request" icon="cloud-upload-outline" onPress={submitAccount} />
@@ -1472,7 +1683,9 @@ function FormInput({
   onChangeText,
   keyboardType = "default",
   secureTextEntry,
-  autoCapitalize = "sentences"
+  autoCapitalize = "sentences",
+  error,
+  helperText
 }: {
   label: string;
   value: string;
@@ -1480,12 +1693,18 @@ function FormInput({
   keyboardType?: "default" | "numeric" | "phone-pad";
   secureTextEntry?: boolean;
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  error?: string;
+  helperText?: string;
 }) {
+  const hasError = Boolean(error && error.trim().length > 0);
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        style={styles.input}
+        style={[
+          styles.input,
+          hasError && styles.inputError
+        ]}
         placeholder={label}
         placeholderTextColor="#8f9aab"
         value={value}
@@ -1494,6 +1713,14 @@ function FormInput({
         secureTextEntry={secureTextEntry}
         autoCapitalize={autoCapitalize}
       />
+      {hasError ? (
+        <View style={styles.errorRow}>
+          <Ionicons name="alert-circle" size={13} color={colors.red} />
+          <Text style={styles.fieldErrorText}>{error}</Text>
+        </View>
+      ) : helperText ? (
+        <Text style={styles.fieldHelperText}>{helperText}</Text>
+      ) : null}
     </View>
   );
 }
@@ -1969,6 +2196,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     paddingHorizontal: 12
+  },
+  inputError: {
+    borderColor: colors.red,
+    borderWidth: 1.5,
+    backgroundColor: "#fff8f8"
+  },
+  errorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4
+  },
+  fieldErrorText: {
+    color: colors.red,
+    fontSize: 12,
+    fontWeight: "700"
+  },
+  fieldHelperText: {
+    color: "#64748b",
+    fontSize: 11,
+    marginTop: 3
+  },
+  errorBanner: {
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8
+  },
+  errorBannerText: {
+    color: colors.red,
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1
   },
   actionButton: {
     minHeight: 50,

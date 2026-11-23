@@ -49,6 +49,8 @@ Route::middleware('auth')->prefix('admin')->group(function(){
  Route::get('/members/{id}/card',[AdminController::class,'viewMemberCard']);
  Route::get('/members/{id}/form',[AdminController::class,'viewMemberForm']);
  Route::post('/members/{id}/update',[AdminController::class,'updateMember']);
+ Route::post('/members/{id}/reset-mpin',[AdminController::class,'resetMemberMpin']);
+ Route::post('/users/{id}/reset-mpin',[AdminController::class,'resetUserMpin']);
  Route::post('/members/{id}/delete',[AdminController::class,'deleteMember']);
  Route::get('/kyc/{id}/view',[AdminController::class,'viewKyc']);
  Route::get('/database/backup',[AdminController::class,'downloadDatabaseBackup']);

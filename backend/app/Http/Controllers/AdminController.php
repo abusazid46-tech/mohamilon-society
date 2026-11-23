@@ -3387,6 +3387,41 @@ class AdminController extends Controller
         return back()->with('ok', 'Customer ' . $member->member_no . ' (' . $user->name . ') deleted successfully.');
     }
 
+    public function resetMemberMpin(Request $request, int $id)
+    {
+        $this->permit($request, 'member.edit');
+        $data = $request->validate([
+            'mpin' => 'required|digits:6',
+        ]);
+        $member = DB::table('members')->where('id', $id)->firstOrFail();
+        $user = User::findOrFail($member->user_id);
+        $user->update(['mpin_hash' => Hash::make($data['mpin'])]);
+        DB::table('api_tokens')->where('user_id', $user->id)->delete();
+        $this->audit($request, 'member.mpin_reset', 'member', $member->id, null, [
+            'member_no' => $member->member_no,
+            'name' => $user->name,
+            'phone' => $user->phone,
+        ]);
+        return back()->with('ok', "Security MPIN for Member {$member->member_no} ({$user->name}) has been reset successfully to {$data['mpin']}. Active mobile app sessions have been refreshed.");
+    }
+
+    public function resetUserMpin(Request $request, int $id)
+    {
+        $this->permit($request, 'member.edit');
+        $data = $request->validate([
+            'mpin' => 'required|digits:6',
+        ]);
+        $user = User::findOrFail($id);
+        $user->update(['mpin_hash' => Hash::make($data['mpin'])]);
+        DB::table('api_tokens')->where('user_id', $user->id)->delete();
+        $this->audit($request, 'user.mpin_reset', 'user', $user->id, null, [
+            'name' => $user->name,
+            'phone' => $user->phone,
+            'role' => $user->role,
+        ]);
+        return back()->with('ok', "Security MPIN for user {$user->name} ({$user->phone}) has been reset successfully to {$data['mpin']}.");
+    }
+
     public function downloadDatabaseBackup(Request $request)
     {
         $this->permit($request, 'backup.manage');

@@ -63,8 +63,15 @@
     </div>
     @endif
     @if(isset($errors) && $errors->any())
-    <div style="background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 16px; border-radius: 8px; margin-bottom: 14px; font-weight: 700; font-size: 13px;">
-        <i class="bi bi-exclamation-triangle-fill"></i> {{ $errors->first() }}
+    <div style="background: #fef2f2; border: 1.5px solid #fecaca; color: #991b1b; padding: 12px 18px; border-radius: 8px; margin-bottom: 14px; font-size: 13px;">
+        <div style="font-weight: 800; display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #dc2626;"></i> Action Incomplete / Failed: Please correct {{ $errors->count() }} issue(s)
+        </div>
+        <ul style="margin: 0; padding-left: 20px; line-height: 1.5;">
+            @foreach($errors->all() as $err)
+                <li><b>{{ $err }}</b></li>
+            @endforeach
+        </ul>
     </div>
     @endif
 
@@ -92,6 +99,7 @@
             </div>
             <div class="actions-bar">
                 <button type="button" onclick="openProfileEditModal()" class="button" style="background:#f59e0b; color:white; border:none; cursor:pointer; font-weight:700;">✏️ Edit Customer Form</button>
+                <button type="button" onclick="openResetMpinModal('member', {{ $member->id }}, '{{ addslashes($member->name) }}', '{{ $member->member_no }}', '{{ $member->phone }}')" class="button" style="background:#7c3aed; color:white; border:none; cursor:pointer; font-weight:700;">🔑 Reset MPIN</button>
                 <a href="/admin/members/{{ $member->id }}/form" target="_blank" class="button secondary">🖨️ Application Form</a>
                 <a href="/admin/statements/{{ $member->id }}/print" target="_blank" class="button">📄 Official Statement</a>
                 <a href="/admin/members/{{ $member->id }}/card" target="_blank" class="button secondary">🪪 Print ID Card</a>
@@ -755,6 +763,19 @@
             <form method="post" action="/admin/members/{{ $member->id }}/update" autocomplete="off" style="padding: 22px; margin: 0; overflow-y: auto; flex: 1;">
                 @csrf
 
+                @if($errors->any() && old('member_no'))
+                <div style="background: #fef2f2; border: 1.5px solid #ef4444; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; color: #991b1b; font-size: 12px;">
+                    <div style="font-weight: 800; display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                        <i class="bi bi-exclamation-octagon-fill" style="color: #dc2626;"></i> Update Failed: {{ $errors->count() }} Error(s)
+                    </div>
+                    <ul style="margin: 0; padding-left: 20px; line-height: 1.5;">
+                        @foreach($errors->all() as $err)
+                            <li><b>{{ $err }}</b></li>
+                        @endforeach
+                    </ul>
+                </div>
+                @endif
+
                 <!-- SECTION 1: ACCOUNT & STATUS -->
                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
                     <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px;">
@@ -1050,6 +1071,66 @@
         </div>
     </div>
 
+    <!-- ================= RESET SECURITY MPIN MODAL ================= -->
+    <div id="resetMpinModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); z-index: 999999; justify-content: center; align-items: center; padding: 20px;">
+        <div style="background: white; border-radius: 12px; width: 100%; max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+            <div style="background: linear-gradient(135deg, #7c3aed, #6d28d9); padding: 16px 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                        🔑
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: white;">Reset Security MPIN</h3>
+                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #ede9fe;">Set new 6-digit login & transaction MPIN</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeResetMpinModal()" style="background: none; border: none; color: white; font-size: 26px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+
+            <form id="resetMpinForm" method="post" action="/admin/members/{{ $member->id }}/reset-mpin" style="padding: 20px; margin: 0;">
+                @csrf
+                <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                        Target Account Details
+                    </div>
+                    <div style="font-size: 13.5px; font-weight: 700; color: #1e1b4b;" id="resetMpinTargetName">{{ $member->name }}</div>
+                    <div style="font-size: 12px; color: #5b21b6; margin-top: 2px;">
+                        <span id="resetMpinTargetRef">Member No: {{ $member->member_no }}</span> · Phone: <b id="resetMpinTargetPhone">{{ $member->phone }}</b>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 6px;">
+                        New 6-Digit MPIN <span style="color:#dc2626">*</span>
+                    </label>
+                    <div style="position: relative;">
+                        <input type="password" name="mpin" id="resetMpinInput" maxlength="6" minlength="6" pattern="^[0-9]{6}$" required placeholder="Enter 6-digit MPIN" autocomplete="new-password" style="width: 100%; padding: 10px 45px 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-size: 16px; font-weight: 800; letter-spacing: 4px; text-align: center; box-sizing: border-box;">
+                        <button type="button" onclick="toggleMpinVisibility()" id="toggleMpinBtn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #64748b; font-size: 16px; cursor: pointer;">
+                            👁
+                        </button>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                        <span style="font-size: 11px; color: #64748b;">Must be exactly 6 numeric digits</span>
+                        <button type="button" onclick="generateRandomMpin()" style="background: #f3f4f6; border: 1px solid #d1d5db; color: #374151; padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            🎲 Auto-Generate
+                        </button>
+                    </div>
+                </div>
+
+                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 12px; margin-bottom: 20px; font-size: 11.5px; color: #92400e; line-height: 1.5;">
+                    <b>Security Notice:</b> Setting a new MPIN will immediately invalidate all existing active mobile app sessions for this user. The member must log in anew with the updated MPIN.
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 14px;">
+                    <button type="button" onclick="closeResetMpinModal()" class="button secondary" style="padding: 8px 16px; font-size: 13px;">Cancel</button>
+                    <button type="submit" class="button" style="padding: 8px 20px; font-size: 13px; background: #7c3aed; color: white; font-weight: 800; border: none; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        ✓ Save & Apply New MPIN
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         function showTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
@@ -1067,8 +1148,55 @@
             const m = document.getElementById('profileEditCustomerModal');
             if (m) m.style.display = 'none';
         }
+
+        function openResetMpinModal(type, id, name, ref, phone) {
+            const modal = document.getElementById('resetMpinModal');
+            const form = document.getElementById('resetMpinForm');
+            if (!modal || !form) return;
+            form.action = type === 'user' ? ('/admin/users/' + id + '/reset-mpin') : ('/admin/members/' + id + '/reset-mpin');
+            document.getElementById('resetMpinTargetName').textContent = name || 'Customer/User';
+            document.getElementById('resetMpinTargetRef').textContent = (type === 'user' ? 'Staff Role: ' : 'Member No: ') + (ref || '--');
+            document.getElementById('resetMpinTargetPhone').textContent = phone || 'N/A';
+            const input = document.getElementById('resetMpinInput');
+            if (input) {
+                input.value = '';
+                input.type = 'password';
+            }
+            modal.style.display = 'flex';
+            setTimeout(() => { if (input) input.focus(); }, 100);
+        }
+
+        function closeResetMpinModal() {
+            const modal = document.getElementById('resetMpinModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function toggleMpinVisibility() {
+            const input = document.getElementById('resetMpinInput');
+            if (!input) return;
+            input.type = input.type === 'password' ? 'text' : 'password';
+        }
+
+        function generateRandomMpin() {
+            const random = Math.floor(100000 + Math.random() * 900000).toString();
+            const input = document.getElementById('resetMpinInput');
+            if (input) {
+                input.value = random;
+                input.type = 'text';
+            }
+        }
+
         document.getElementById('profileEditCustomerModal')?.addEventListener('click', function(e) {
             if (e.target === this) closeProfileEditModal();
+        });
+        document.getElementById('resetMpinModal')?.addEventListener('click', function(e) {
+            if (e.target === this) closeResetMpinModal();
+        });
+        window.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeProfileEditModal();
+                closeResetMpinModal();
+            }
         });
     </script>
 </body>

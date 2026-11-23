@@ -870,6 +870,23 @@
             @csrf
             <input type="hidden" name="member_source" value="new">
 
+            @if($errors->any() && (old('member_source') === 'new' || old('applicant_name') || old('applicant_phone') || old('applicant_aadhaar') || old('applicant_nominee')))
+            <div style="background: #fef2f2; border: 2px solid #ef4444; border-radius: 8px; padding: 16px 20px; box-shadow: 0 4px 12px rgba(239,68,68,0.15); margin-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 14px; color: #991b1b; margin-bottom: 8px;">
+                    <i class="bi bi-exclamation-octagon-fill" style="font-size: 20px; color: #dc2626;"></i>
+                    <span>Customer Registration Incomplete / Failed ({{ $errors->count() }} issue{{ $errors->count() > 1 ? 's' : '' }} detected)</span>
+                </div>
+                <div style="font-size: 12px; color: #b91c1c; margin-bottom: 8px;">
+                    All previously entered customer information has been preserved below. Please resolve the following flagged items:
+                </div>
+                <ul style="margin: 0; padding-left: 20px; font-size: 12.5px; color: #991b1b; line-height: 1.6;">
+                    @foreach($errors->all() as $err)
+                        <li><b>{{ $err }}</b></li>
+                    @endforeach
+                </ul>
+            </div>
+            @endif
+
             <!-- SECTION A: FORMAL ENROLLMENT REQUEST & ACCOUNT ALLOTMENT -->
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
                 <div style="font-size: 13px; font-weight: 800; color: #0284c7; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
@@ -888,24 +905,33 @@
                         </label>
                         <select name="scheme_id" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
                             @foreach($schemes as $s)
-                                <option value="{{ $s->id }}">{{ $s->name }} ({{ strtoupper($s->type) }})</option>
+                                <option value="{{ $s->id }}" @selected(old('scheme_id') == $s->id)>{{ $s->name }} ({{ strtoupper($s->type) }})</option>
                             @endforeach
                         </select>
+                        @error('scheme_id')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
 
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Allotment of Shares <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="share_count" id="customerCreateShareCount" type="number" min="1" max="100" value="1" oninput="calcCustomerCreateDeposit()" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 700;">
+                        <input name="share_count" id="customerCreateShareCount" type="number" min="1" max="100" value="{{ old('share_count', 1) }}" oninput="calcCustomerCreateDeposit()" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('share_count') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; font-weight: 700;">
+                        @error('share_count')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
 
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Opening Deposit Amount (&#8377;) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="opening_deposit" id="customerCreateOpeningDeposit" type="number" min="500" step="10" value="500" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; font-weight: 700; background: #f8fafc;">
+                        <input name="opening_deposit" id="customerCreateOpeningDeposit" type="number" min="500" step="10" value="{{ old('opening_deposit', 500) }}" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('opening_deposit') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; font-weight: 700; background: #f8fafc;">
                         <span id="customerCreateDepositHint" style="font-size: 10.5px; color: #15803d; font-weight: 600; margin-top: 3px; display: block;">&#8377;500 per share (1 share = &#8377;500 opening deposit)</span>
+                        @error('opening_deposit')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                 </div>
 
@@ -915,16 +941,22 @@
                         <label style="font-size: 11.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 4px; margin-bottom: 5px;">
                             <i class="bi bi-calendar-event"></i> Admission / Joining Date (Editable for back-date entry) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="date_of_joining" type="date" value="{{ date('Y-m-d') }}" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: #ffffff;">
+                        <input name="date_of_joining" type="date" value="{{ old('date_of_joining', date('Y-m-d')) }}" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: #ffffff;">
                         <span style="font-size: 10.5px; color: #15803d; margin-top: 3px; display: block;">Choose any past date for retroactive customer registration</span>
+                        @error('date_of_joining')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
 
                     <div>
                         <label style="font-size: 11.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 4px; margin-bottom: 5px;">
                             <i class="bi bi-calendar-check"></i> Account Opening Date (Editable for back-date entry) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="account_opening_date" id="customerCreateOpeningDate" type="date" value="{{ date('Y-m-d') }}" onchange="updateCreateAccountMaturity()" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: #ffffff;">
+                        <input name="account_opening_date" id="customerCreateOpeningDate" type="date" value="{{ old('account_opening_date', date('Y-m-d')) }}" onchange="updateCreateAccountMaturity()" required style="width: 100%; padding: 8px 12px; border: 1.5px solid #22c55e; border-radius: 6px; font-size: 13px; font-weight: 700; background: #ffffff;">
                         <span style="font-size: 10.5px; color: #15803d; margin-top: 3px; display: block;">Effective opening date for deposit scheme & ledger records</span>
+                        @error('account_opening_date')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                 </div>
 
@@ -954,13 +986,13 @@
                                 Deposit Tenure Duration <span style="color:#dc2626">*</span>
                             </label>
                             <div style="display: flex; gap: 6px;">
-                                <input type="number" id="createAccountTenureValue" min="1" max="600" value="12" oninput="updateCreateAccountMaturity()" style="flex: 1; padding: 8px 10px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 13px; font-weight: 700; background: white;">
+                                <input type="number" id="createAccountTenureValue" min="1" max="600" value="{{ old('tenure_months', 12) }}" oninput="updateCreateAccountMaturity()" style="flex: 1; padding: 8px 10px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 13px; font-weight: 700; background: white;">
                                 <select id="createAccountTenureUnit" onchange="updateCreateAccountMaturity()" style="padding: 8px 8px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 12px; font-weight: 700; background: white; color: #0f766e;">
                                     <option value="months" selected>Months</option>
                                     <option value="years">Years</option>
                                 </select>
                             </div>
-                            <input type="hidden" name="tenure_months" id="createAccountTenureMonths" value="12">
+                            <input type="hidden" name="tenure_months" id="createAccountTenureMonths" value="{{ old('tenure_months', 12) }}">
                             <span style="font-size: 10.5px; color: #0f766e; margin-top: 3px; display: block;">Specify duration in months or years</span>
                         </div>
 
@@ -968,7 +1000,7 @@
                             <label style="font-size: 11.5px; font-weight: 700; color: #134e4a; display: block; margin-bottom: 5px;">
                                 Custom Interest Rate (% p.a.)
                             </label>
-                            <input name="custom_interest_rate" id="createAccountCustomRate" type="number" step=".01" min="0" max="30" placeholder="Default Plan Rate" oninput="updateCreateAccountMaturity()" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
+                            <input name="custom_interest_rate" id="createAccountCustomRate" type="number" step=".01" min="0" max="30" value="{{ old('custom_interest_rate') }}" placeholder="Default Plan Rate" oninput="updateCreateAccountMaturity()" style="width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
                             <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Leave blank for scheme rate</span>
                         </div>
 
@@ -976,7 +1008,7 @@
                             <label style="font-size: 11.5px; font-weight: 700; color: #134e4a; display: block; margin-bottom: 5px;">
                                 Maturity Date (Editable / Auto)
                             </label>
-                            <input name="maturity_date" id="createAccountMaturityDate" type="date" onchange="onManualMaturityChange()" style="width: 100%; padding: 8px 10px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 13px; font-weight: 700; background: white;">
+                            <input name="maturity_date" id="createAccountMaturityDate" type="date" value="{{ old('maturity_date') }}" onchange="onManualMaturityChange()" style="width: 100%; padding: 8px 10px; border: 1.5px solid #14b8a6; border-radius: 6px; font-size: 13px; font-weight: 700; background: white;">
                             <span id="createAccountMaturityNote" style="font-size: 10.5px; color: #0f766e; margin-top: 3px; display: block;">Auto-calculated (can also set manually)</span>
                         </div>
                     </div>
@@ -1001,13 +1033,16 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             1. Full Name of Applicant <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="applicant_name" type="text" placeholder="e.g. Rahul Sharma" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_name" type="text" value="{{ old('applicant_name') }}" placeholder="e.g. Rahul Sharma" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_name') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_name') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_name')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             2. (a) S/o, W/o, D/o
                         </label>
-                        <input name="parent_name" type="text" placeholder="Son / Wife / Daughter of..." style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="parent_name" type="text" value="{{ old('parent_name') }}" placeholder="Son / Wife / Daughter of..." style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                 </div>
 
@@ -1017,13 +1052,13 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             2. (b) Mother’s Name
                         </label>
-                        <input name="mother_name" type="text" placeholder="Mother's Full Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="mother_name" type="text" value="{{ old('mother_name') }}" placeholder="Mother's Full Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             2. (c) Father’s Name
                         </label>
-                        <input name="father_name" type="text" placeholder="Father's Full Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="father_name" type="text" value="{{ old('father_name') }}" placeholder="Father's Full Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                 </div>
 
@@ -1033,44 +1068,39 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             3. Age (Years)
                         </label>
-                        <input name="applicant_age" type="number" min="18" max="100" placeholder="e.g. 32" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_age" type="number" min="18" max="100" value="{{ old('applicant_age') }}" placeholder="e.g. 32" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Date of Birth
                         </label>
-                        <input name="applicant_date_of_birth" type="date" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_date_of_birth" type="date" value="{{ old('applicant_date_of_birth') }}" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             4. Blood Group
                         </label>
                         <select name="blood_group" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
-                            <option value="O+">O+</option>
-                            <option value="A+">A+</option>
-                            <option value="B+">B+</option>
-                            <option value="AB+">AB+</option>
-                            <option value="O-">O-</option>
-                            <option value="A-">A-</option>
-                            <option value="B-">B-</option>
-                            <option value="AB-">AB-</option>
+                            <option value="">Select</option>
+                            @foreach(['O+','A+','B+','AB+','O-','A-','B-','AB-'] as $bg)
+                                <option value="{{ $bg }}" @selected(old('blood_group') === $bg)>{{ $bg }}</option>
+                            @endforeach
                         </select>
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             5. Qualification
                         </label>
-                        <input name="qualification" type="text" placeholder="e.g. Graduate / HS / Post Graduate" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="qualification" type="text" value="{{ old('qualification') }}" placeholder="e.g. Graduate / HS / Post Graduate" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Marital Status
                         </label>
                         <select name="marital_status" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
-                            <option value="Married">Married</option>
-                            <option value="Single">Single</option>
-                            <option value="Widowed">Widowed</option>
-                            <option value="Divorced">Divorced</option>
+                            @foreach(['Married','Single','Widowed','Divorced'] as $ms)
+                                <option value="{{ $ms }}" @selected(old('marital_status') === $ms)>{{ $ms }}</option>
+                            @endforeach
                         </select>
                     </div>
                 </div>
@@ -1088,19 +1118,25 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             6. Permanent Address <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="applicant_address" type="text" placeholder="House/Village, Post Office, City/District, Assam" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_address" type="text" value="{{ old('applicant_address') }}" placeholder="House/Village, Post Office, City/District, Assam" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_address') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_address') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_address')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Pin Code
                         </label>
-                        <input name="pincode" type="text" placeholder="e.g. 781001" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="pincode" type="text" value="{{ old('pincode') }}" placeholder="e.g. 781001" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Phone No. <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="applicant_phone" type="tel" pattern="^[6-9][0-9]{9}$" placeholder="10-digit mobile" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_phone" type="tel" pattern="^[6-9][0-9]{9}$" value="{{ old('applicant_phone') }}" placeholder="10-digit mobile" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_phone') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_phone') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_phone')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                 </div>
 
@@ -1110,19 +1146,25 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             7. Present / Correspondence Address
                         </label>
-                        <input name="present_address" type="text" placeholder="Present Address (Leave blank if same as permanent)" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="present_address" type="text" value="{{ old('present_address') }}" placeholder="Present Address (Leave blank if same as permanent)" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Email Address (Optional)
                         </label>
-                        <input name="applicant_email" type="email" placeholder="applicant@email.com" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_email" type="email" value="{{ old('applicant_email') }}" placeholder="applicant@email.com" style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_email') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_email') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_email')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Security MPIN (6 Digits) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="applicant_mpin" type="password" minlength="6" maxlength="6" pattern="^[0-9]{6}$" value="123456" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_mpin" type="password" minlength="6" maxlength="6" pattern="^[0-9]{6}$" value="{{ old('applicant_mpin', '123456') }}" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_mpin') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_mpin') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_mpin')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                 </div>
             </div>
@@ -1143,25 +1185,25 @@
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 Name of Bank
                             </label>
-                            <input name="bank_name" type="text" placeholder="e.g. State Bank of India / PNB" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                            <input name="bank_name" type="text" value="{{ old('bank_name') }}" placeholder="e.g. State Bank of India / PNB" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                         </div>
                         <div>
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 Bank Account No.
                             </label>
-                            <input name="bank_account_no" type="text" placeholder="Bank Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                            <input name="bank_account_no" type="text" value="{{ old('bank_account_no') }}" placeholder="Bank Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                         </div>
                         <div>
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 IFSC Code
                             </label>
-                            <input name="bank_ifsc" type="text" placeholder="e.g. SBIN0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
+                            <input name="bank_ifsc" type="text" value="{{ old('bank_ifsc') }}" placeholder="e.g. SBIN0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
                         </div>
                         <div>
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 Branch
                             </label>
-                            <input name="bank_branch" type="text" placeholder="Branch Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                            <input name="bank_branch" type="text" value="{{ old('bank_branch') }}" placeholder="Branch Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                         </div>
                     </div>
 
@@ -1173,25 +1215,25 @@
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 Name of Bank (2)
                             </label>
-                            <input name="bank2_name" type="text" placeholder="e.g. HDFC / Axis / Co-op Bank" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                            <input name="bank2_name" type="text" value="{{ old('bank2_name') }}" placeholder="e.g. HDFC / Axis / Co-op Bank" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                         </div>
                         <div>
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 Account No. (2)
                             </label>
-                            <input name="bank2_account_no" type="text" placeholder="Secondary Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                            <input name="bank2_account_no" type="text" value="{{ old('bank2_account_no') }}" placeholder="Secondary Account Number" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                         </div>
                         <div>
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 IFSC Code (2)
                             </label>
-                            <input name="bank2_ifsc" type="text" placeholder="e.g. HDFC0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
+                            <input name="bank2_ifsc" type="text" value="{{ old('bank2_ifsc') }}" placeholder="e.g. HDFC0001234" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
                         </div>
                         <div>
                             <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                                 Branch (2)
                             </label>
-                            <input name="bank2_branch" type="text" placeholder="Branch Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                            <input name="bank2_branch" type="text" value="{{ old('bank2_branch') }}" placeholder="Branch Name" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                         </div>
                     </div>
                 </div>
@@ -1203,20 +1245,16 @@
                             9. Employed In
                         </label>
                         <select name="applicant_occupation" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; background: white;">
-                            <option value="Govt. Service">Govt. Service</option>
-                            <option value="Semi-Govt.">Semi-Govt.</option>
-                            <option value="Public Ltd.">Public Ltd.</option>
-                            <option value="Pvt. Ltd.">Pvt. Ltd.</option>
-                            <option value="Business / Self-Employed" selected>Business / Self-Employed</option>
-                            <option value="Agriculture / Cultivation">Agriculture / Cultivation</option>
-                            <option value="Other">Other Profession</option>
+                            @foreach(['Govt. Service','Semi-Govt.','Public Ltd.','Pvt. Ltd.','Business / Self-Employed','Agriculture / Cultivation','Other'] as $occ)
+                                <option value="{{ $occ }}" @selected(old('applicant_occupation', 'Business / Self-Employed') === $occ)>{{ $occ }}</option>
+                            @endforeach
                         </select>
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             10. Office in which employed with full address
                         </label>
-                        <input name="office_address" type="text" placeholder="Office / Shop / Business establishment address" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="office_address" type="text" value="{{ old('office_address') }}" placeholder="Office / Shop / Business establishment address" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                 </div>
 
@@ -1226,19 +1264,25 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             11. Designation & Salary Drawn (all allowances)
                         </label>
-                        <input name="designation_salary" type="text" placeholder="e.g. Executive, Rs. 35,000/- p.m." style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="designation_salary" type="text" value="{{ old('designation_salary') }}" placeholder="e.g. Executive, Rs. 35,000/- p.m." style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             14. PAN Number (if Tax Assessee)
                         </label>
-                        <input name="applicant_pan" type="text" placeholder="ABCDE1234F" pattern="^[A-Z]{5}[0-9]{4}[A-Z]$" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; text-transform: uppercase;">
+                        <input name="applicant_pan" type="text" value="{{ old('applicant_pan') }}" placeholder="ABCDE1234F" pattern="^[A-Z]{5}[0-9]{4}[A-Z]$" style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_pan') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; text-transform: uppercase; {{ $errors->has('applicant_pan') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_pan')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Aadhaar Number (12 Digits) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="applicant_aadhaar" type="text" pattern="^[0-9]{12}$" placeholder="12-digit Aadhaar" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_aadhaar" type="text" pattern="^[0-9]{12}$" value="{{ old('applicant_aadhaar') }}" placeholder="12-digit Aadhaar" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_aadhaar') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_aadhaar') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_aadhaar')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                 </div>
 
@@ -1247,7 +1291,7 @@
                     <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                         15. State whether any of your relative is a member of this Society (if yes, give details)
                     </label>
-                    <input name="relative_member_details" type="text" placeholder="No / If yes, state Name, Relation, Account No." style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                    <input name="relative_member_details" type="text" value="{{ old('relative_member_details') }}" placeholder="No / If yes, state Name, Relation, Account No." style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                 </div>
             </div>
 
@@ -1265,19 +1309,22 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Nominee Full Name (Sh./Smt/Miss) <span style="color:#dc2626">*</span>
                         </label>
-                        <input name="applicant_nominee" type="text" placeholder="Nominee's Full Name" required style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="applicant_nominee" type="text" value="{{ old('applicant_nominee') }}" placeholder="Nominee's Full Name" required style="width: 100%; padding: 9px 12px; border: 1px solid {{ $errors->has('applicant_nominee') ? '#dc2626' : '#cbd5e1' }}; border-radius: 6px; font-size: 13px; {{ $errors->has('applicant_nominee') ? 'background: #fff5f5;' : '' }}">
+                        @error('applicant_nominee')
+                            <span style="font-size: 11px; color: #dc2626; font-weight: 700; margin-top: 3px; display: block;"><i class="bi bi-exclamation-circle-fill"></i> {{ $message }}</span>
+                        @enderror
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Nominee S/o, W/o, D/o
                         </label>
-                        <input name="nominee_parent" type="text" placeholder="Parent / Spouse of Nominee" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="nominee_parent" type="text" value="{{ old('nominee_parent') }}" placeholder="Parent / Spouse of Nominee" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Relation with Member
                         </label>
-                        <input name="nominee_relation" type="text" placeholder="e.g. Spouse / Son / Daughter" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="nominee_relation" type="text" value="{{ old('nominee_relation') }}" placeholder="e.g. Spouse / Son / Daughter" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                 </div>
 
@@ -1286,19 +1333,19 @@
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Nominee Occupation
                         </label>
-                        <input name="nominee_occupation" type="text" placeholder="e.g. Household / Service" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="nominee_occupation" type="text" value="{{ old('nominee_occupation') }}" placeholder="e.g. Household / Service" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Nominee Age
                         </label>
-                        <input name="nominee_age" type="number" min="1" max="100" placeholder="e.g. 28" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="nominee_age" type="number" min="1" max="100" value="{{ old('nominee_age') }}" placeholder="e.g. 28" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                     <div>
                         <label style="font-size: 11.5px; font-weight: 700; color: #475569; display: block; margin-bottom: 5px;">
                             Nominee Address
                         </label>
-                        <input name="nominee_address" type="text" placeholder="Residential Address of Nominee" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
+                        <input name="nominee_address" type="text" value="{{ old('nominee_address') }}" placeholder="Residential Address of Nominee" style="width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;">
                     </div>
                 </div>
             </div>
@@ -1317,13 +1364,13 @@
                     <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 14px; background: #f8fafc;">
                         <div style="font-weight: 800; font-size: 12px; color: #0f172a; margin-bottom: 10px;">Introducer Member 1</div>
                         <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <input name="intro1_name" type="text" placeholder="1. Full Name of Introducer" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
-                            <input name="intro1_parent" type="text" placeholder="S/o, W/o, D/o" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            <input name="intro1_name" type="text" value="{{ old('intro1_name') }}" placeholder="1. Full Name of Introducer" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            <input name="intro1_parent" type="text" value="{{ old('intro1_parent') }}" placeholder="S/o, W/o, D/o" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                <input name="intro1_account" type="text" placeholder="Account No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
-                                <input name="intro1_lf" type="text" placeholder="LF No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input name="intro1_account" type="text" value="{{ old('intro1_account') }}" placeholder="Account No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input name="intro1_lf" type="text" value="{{ old('intro1_lf') }}" placeholder="LF No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
                             </div>
-                            <input name="intro1_address" type="text" placeholder="Address" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            <input name="intro1_address" type="text" value="{{ old('intro1_address') }}" placeholder="Address" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
                         </div>
                     </div>
 
@@ -1331,13 +1378,13 @@
                     <div style="border: 1px solid #cbd5e1; border-radius: 6px; padding: 14px; background: #f8fafc;">
                         <div style="font-weight: 800; font-size: 12px; color: #0f172a; margin-bottom: 10px;">Introducer Member 2</div>
                         <div style="display: flex; flex-direction: column; gap: 8px;">
-                            <input name="intro2_name" type="text" placeholder="2. Full Name of Introducer" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
-                            <input name="intro2_parent" type="text" placeholder="S/o, W/o, D/o" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            <input name="intro2_name" type="text" value="{{ old('intro2_name') }}" placeholder="2. Full Name of Introducer" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            <input name="intro2_parent" type="text" value="{{ old('intro2_parent') }}" placeholder="S/o, W/o, D/o" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                <input name="intro2_account" type="text" placeholder="Account No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
-                                <input name="intro2_lf" type="text" placeholder="LF No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input name="intro2_account" type="text" value="{{ old('intro2_account') }}" placeholder="Account No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                                <input name="intro2_lf" type="text" value="{{ old('intro2_lf') }}" placeholder="LF No." style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
                             </div>
-                            <input name="intro2_address" type="text" placeholder="Address" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
+                            <input name="intro2_address" type="text" value="{{ old('intro2_address') }}" placeholder="Address" style="padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;">
                         </div>
                     </div>
                 </div>
@@ -1416,6 +1463,9 @@
                                     <a href="/admin/members/{{$m->id}}" class="button" style="padding: 3px 8px; font-size: 11px; background: #0284c7;">360° Profile</a>
                                     <button type="button" data-member="{{ htmlspecialchars(json_encode($m), ENT_QUOTES, 'UTF-8') }}" onclick="openEditMemberModal(this)" class="button" style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details & Form">
                                         <i class="bi bi-pencil-square"></i> Edit
+                                    </button>
+                                    <button type="button" onclick="openResetMpinModal('member', {{$m->id}}, '{{ addslashes($m->name) }}', '{{ $m->member_no }}', '{{ $m->phone }}')" class="button" style="padding: 3px 8px; font-size: 11px; background: #7c3aed; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Reset Security MPIN">
+                                        <i class="bi bi-key-fill"></i> MPIN
                                     </button>
                                     <a href="/admin/members/{{$m->id}}/card" target="_blank" class="button secondary" style="padding: 3px 8px; font-size: 11px;">ID Card</a>
                                     <a href="/admin/members/{{$m->id}}/form" target="_blank" class="button secondary" style="padding: 3px 8px; font-size: 11px;"><i class="bi bi-printer"></i> Form</a>
@@ -1754,6 +1804,12 @@
                                     onclick="openEditMemberModal(this)"
                                     style="padding: 3px 8px; font-size: 11px; background: #f59e0b; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;" title="Edit Customer Details & Form">
                                     <i class="bi bi-pencil-square"></i> Edit
+                                </button>
+                                <button type="button"
+                                    onclick="openResetMpinModal('member', {{ $m->id }}, '{{ addslashes($m->name) }}', '{{ $m->member_no }}', '{{ $m->phone }}')"
+                                    style="padding: 3px 8px; font-size: 11px; background: #7c3aed; color: white; border-radius: 4px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; font-weight: 700;"
+                                    title="Reset Security MPIN">
+                                    <i class="bi bi-key-fill"></i> MPIN
                                 </button>
                                 <form method="post" action="/admin/members/{{ $m->id }}/delete" onsubmit="return confirm('Are you sure you want to permanently delete customer {{ $m->member_no }} ({{ addslashes($m->name) }})? All related loans, accounts, and records will be deleted.');" style="display: inline; margin: 0;">
                                     @csrf
@@ -3866,7 +3922,7 @@
         <h3>Existing staff</h3>
         @foreach($staffUsers as $staff)
         <form method="post" action="/admin/staff/{{$staff->id}}" style="border-top:1px solid var(--line);padding:16px 0">@csrf
-            <div class="row"><div style="min-width:230px"><b>{{$staff->name}}</b><br><span class="muted">{{$staff->email}}</span></div><select name="role">@foreach(['super_admin','president','manager','secretary','agent'] as $r)<option value="{{$r}}" @selected($staff->role===$r)>{{ucwords(str_replace('_',' ',$r))}}</option>@endforeach</select><select name="status"><option value="active" @selected($staff->status==='active')>Active</option><option value="suspended" @selected($staff->status==='suspended')>Suspended</option></select><button>Save assignment</button></div>
+            <div class="row"><div style="min-width:230px"><b>{{$staff->name}}</b><br><span class="muted">{{$staff->email}}</span></div><select name="role">@foreach(['super_admin','president','manager','secretary','agent'] as $r)<option value="{{$r}}" @selected($staff->role===$r)>{{ucwords(str_replace('_',' ',$r))}}</option>@endforeach</select><select name="status"><option value="active" @selected($staff->status==='active')>Active</option><option value="suspended" @selected($staff->status==='suspended')>Suspended</option></select><button>Save assignment</button><button type="button" onclick="openResetMpinModal('user', {{$staff->id}}, '{{ addslashes($staff->name) }}', 'Staff ({{ $staff->role }})', '{{ $staff->phone ?? $staff->email }}')" class="button" style="padding: 6px 12px; font-size: 12px; background: #7c3aed; color: white; border: none; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-weight: 700;" title="Reset 6-digit MPIN"><i class="bi bi-key-fill"></i> Reset MPIN</button></div>
             <div class="perm-grid">@foreach($permissionDefinitions as $key=>$label)<label class="check"><input type="checkbox" name="permissions[]" value="{{$key}}" @checked(in_array($key,\App\Services\StaffPermissions::for($staff),true)) @disabled($staff->role==='super_admin')><span><b>{{$key}}</b><br><small class="muted">{{$label}}</small></span></label>@endforeach</div>
         </form>
         @endforeach
@@ -3987,11 +4043,19 @@
     };
 
     const activateFromLocation = () => {
+        let initialId = null;
+        @if($errors->any())
+            @if(old('member_source') === 'new' || old('applicant_name') || old('applicant_phone') || old('applicant_aadhaar'))
+                initialId = 'customer-create';
+            @elseif(old('member_id') || old('account_opening_date'))
+                initialId = 'accounts';
+            @endif
+        @endif
         const hashId = decodeURIComponent(window.location.hash.slice(1));
         const storedId = sessionStorage.getItem(storageKey);
-        const id = sectionIds.has(hashId) ? hashId : (sectionIds.has(storedId) ? storedId : 'overview');
+        const id = initialId || (sectionIds.has(hashId) ? hashId : (sectionIds.has(storedId) ? storedId : 'overview'));
         activate(id);
-        if (!sectionIds.has(hashId)) history.replaceState(null, '', `#${id}`);
+        if (!sectionIds.has(hashId) || initialId) history.replaceState(null, '', `#${id}`);
     };
 
     const applicantSource = document.getElementById('account-member-source');
@@ -5122,6 +5186,19 @@
             <form id="editMemberForm" method="post" action="" autocomplete="off" style="padding: 22px; margin: 0; overflow-y: auto; flex: 1;">
                 @csrf
 
+                @if($errors->any() && old('member_no'))
+                <div style="background: #fef2f2; border: 1.5px solid #ef4444; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; color: #991b1b; font-size: 12px;">
+                    <div style="font-weight: 800; display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                        <i class="bi bi-exclamation-octagon-fill" style="color: #dc2626;"></i> Update Failed: {{ $errors->count() }} Error(s)
+                    </div>
+                    <ul style="margin: 0; padding-left: 20px; line-height: 1.5;">
+                        @foreach($errors->all() as $err)
+                            <li><b>{{ $err }}</b></li>
+                        @endforeach
+                    </ul>
+                </div>
+                @endif
+
                 <!-- SECTION 1: ACCOUNT & STATUS -->
                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
                     <div style="font-size: 12px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
@@ -5524,6 +5601,66 @@
         </div>
     </div>
 
+    <!-- ================= RESET SECURITY MPIN MODAL ================= -->
+    <div id="resetMpinModal" style="display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); z-index: 999999; justify-content: center; align-items: center; padding: 20px;">
+        <div style="background: white; border-radius: 12px; width: 100%; max-width: 480px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); overflow: hidden; display: flex; flex-direction: column;">
+            <div style="background: linear-gradient(135deg, #7c3aed, #6d28d9); padding: 16px 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 18px;">
+                        <i class="bi bi-key-fill"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; font-size: 16px; font-weight: 800; color: white;">Reset Security MPIN</h3>
+                        <p style="margin: 2px 0 0; font-size: 11.5px; color: #ede9fe;">Set new 6-digit login & transaction MPIN</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeResetMpinModal()" style="background: none; border: none; color: white; font-size: 26px; cursor: pointer; line-height: 1;">&times;</button>
+            </div>
+
+            <form id="resetMpinForm" method="post" action="" style="padding: 20px; margin: 0;">
+                @csrf
+                <div style="background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+                    <div style="font-size: 11px; font-weight: 800; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">
+                        Target Account Details
+                    </div>
+                    <div style="font-size: 13.5px; font-weight: 700; color: #1e1b4b;" id="resetMpinTargetName">Member Name</div>
+                    <div style="font-size: 12px; color: #5b21b6; margin-top: 2px;">
+                        <span id="resetMpinTargetRef">ID: --</span> · Phone: <b id="resetMpinTargetPhone">--</b>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <label style="font-size: 12px; font-weight: 700; color: #334155; display: block; margin-bottom: 6px;">
+                        New 6-Digit MPIN <span style="color:#dc2626">*</span>
+                    </label>
+                    <div style="position: relative;">
+                        <input type="password" name="mpin" id="resetMpinInput" maxlength="6" minlength="6" pattern="^[0-9]{6}$" required placeholder="Enter 6-digit MPIN" autocomplete="new-password" style="width: 100%; padding: 10px 45px 10px 12px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-size: 16px; font-weight: 800; letter-spacing: 4px; text-align: center; box-sizing: border-box;">
+                        <button type="button" onclick="toggleMpinVisibility()" id="toggleMpinBtn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #64748b; font-size: 16px; cursor: pointer;">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                        <span style="font-size: 11px; color: #64748b;">Must be exactly 6 numeric digits</span>
+                        <button type="button" onclick="generateRandomMpin()" style="background: #f3f4f6; border: 1px solid #d1d5db; color: #374151; padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class="bi bi-shuffle"></i> Auto-Generate
+                        </button>
+                    </div>
+                </div>
+
+                <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 12px; margin-bottom: 20px; font-size: 11.5px; color: #92400e; line-height: 1.5;">
+                    <i class="bi bi-shield-exclamation" style="font-size: 13px;"></i> <b>Security Notice:</b> Setting a new MPIN will immediately invalidate all existing active mobile app sessions for this user. The member/user must log in anew with the updated MPIN.
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 14px;">
+                    <button type="button" onclick="closeResetMpinModal()" class="button secondary" style="padding: 8px 16px; font-size: 13px;">Cancel</button>
+                    <button type="submit" class="button" style="padding: 8px 20px; font-size: 13px; background: #7c3aed; color: white; font-weight: 800; border: none; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                        <i class="bi bi-check2-circle"></i> Save & Apply New MPIN
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Scripts for Customizable Deposit Tenure and Wrong Entry Correction -->
     <script>
         function setCreateAccountTenure(val, unit, btn) {
@@ -5760,16 +5897,73 @@
             }
         }
 
+        // Reset MPIN Modal Handlers
+        function openResetMpinModal(type, id, name, ref, phone) {
+            const modal = document.getElementById('resetMpinModal');
+            const form = document.getElementById('resetMpinForm');
+            if (!modal || !form) return;
+            form.action = type === 'user' ? ('/admin/users/' + id + '/reset-mpin') : ('/admin/members/' + id + '/reset-mpin');
+            document.getElementById('resetMpinTargetName').textContent = name || 'Customer/User';
+            document.getElementById('resetMpinTargetRef').textContent = (type === 'user' ? 'Staff Role: ' : 'Member No: ') + (ref || '--');
+            document.getElementById('resetMpinTargetPhone').textContent = phone || 'N/A';
+            const input = document.getElementById('resetMpinInput');
+            if (input) {
+                input.value = '';
+                input.type = 'password';
+            }
+            const eye = document.querySelector('#toggleMpinBtn i');
+            if (eye) eye.className = 'bi bi-eye';
+            modal.style.display = 'flex';
+            modal.style.zIndex = '999999';
+            setTimeout(() => { if (input) input.focus(); }, 100);
+        }
+
+        function closeResetMpinModal() {
+            const modal = document.getElementById('resetMpinModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        function toggleMpinVisibility() {
+            const input = document.getElementById('resetMpinInput');
+            const eye = document.querySelector('#toggleMpinBtn i');
+            if (!input) return;
+            if (input.type === 'password') {
+                input.type = 'text';
+                if (eye) eye.className = 'bi bi-eye-slash';
+            } else {
+                input.type = 'password';
+                if (eye) eye.className = 'bi bi-eye';
+            }
+        }
+
+        function generateRandomMpin() {
+            const random = Math.floor(100000 + Math.random() * 900000).toString();
+            const input = document.getElementById('resetMpinInput');
+            if (input) {
+                input.value = random;
+                input.type = 'text';
+                const eye = document.querySelector('#toggleMpinBtn i');
+                if (eye) eye.className = 'bi bi-eye-slash';
+            }
+        }
+
         // Close on ESC key or outside click
         window.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeEditDepositModal();
+                closeResetMpinModal();
             }
         });
 
         document.getElementById('editDepositModal')?.addEventListener('click', function(e) {
             if (e.target === this) {
                 closeEditDepositModal();
+            }
+        });
+
+        document.getElementById('resetMpinModal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeResetMpinModal();
             }
         });
 
