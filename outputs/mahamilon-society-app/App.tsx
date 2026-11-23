@@ -22,7 +22,7 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Scheme } from "./src/domain";
 import { colors, shadow } from "./src/theme";
-import { api, ApiError, Dashboard } from "./src/api";
+import { api, ApiError, Dashboard, MemberAccount, AccountPassbookData, RdInstallment } from "./src/api";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -103,9 +103,31 @@ function AppContent() {
   });
   const [accountForm, setAccountForm] = useState<AccountForm>({
     plan: "Daily RD Account",
-    deposit: "",
+    deposit: "500",
     shares: "1"
   });
+  const [passbookAccount, setPassbookAccount] = useState<MemberAccount | null>(null);
+  const [passbookData, setPassbookData] = useState<AccountPassbookData | null>(null);
+  const [passbookLoading, setPassbookLoading] = useState(false);
+  const [rdScheduleAccount, setRdScheduleAccount] = useState<MemberAccount | null>(null);
+
+  const openPassbook = async (account: MemberAccount) => {
+    setPassbookAccount(account);
+    setPassbookData(null);
+    setPassbookLoading(true);
+    try {
+      const data = await api.getAccountPassbook(account.id);
+      setPassbookData(data);
+    } catch (error) {
+      Alert.alert("Passbook error", error instanceof ApiError ? error.message : "Failed to load live passbook.");
+    } finally {
+      setPassbookLoading(false);
+    }
+  };
+
+  const openRdSchedule = (account: MemberAccount) => {
+    setRdScheduleAccount(account);
+  };
   const [loanForm, setLoanForm] = useState<LoanForm>({
     amount: "",
     purpose: "",
@@ -198,8 +220,23 @@ function AppContent() {
   };
 
   const submitAccount = async () => {
-    const scheme=liveSchemes.find(item=>item.title===accountForm.plan)??liveSchemes[0]; if(!scheme||!Number(accountForm.deposit)){Alert.alert("Complete request","Choose a scheme and enter the opening deposit.");return;} try { await api.openAccount(Number(scheme.id),Number(accountForm.deposit),Math.max(1,Number(accountForm.shares)||1)); await refreshData(); Alert.alert("Request submitted", "After staff approval, your UPI QR will appear here for the opening payment."); } catch(error){Alert.alert("Request failed",error instanceof ApiError?error.message:"Server unavailable");return;}
-    setAccountForm({ plan: "Daily RD Account", deposit: "", shares:"1" });
+    const scheme = liveSchemes.find(item => item.title === accountForm.plan) ?? liveSchemes[0];
+    const shares = Math.max(1, Number(accountForm.shares) || 1);
+    const calculatedDeposit = shares * 500;
+    const depositAmount = Number(accountForm.deposit) || calculatedDeposit;
+    if (!scheme || !depositAmount) {
+      Alert.alert("Complete request", "Choose a scheme and enter the opening deposit.");
+      return;
+    }
+    try {
+      await api.openAccount(Number(scheme.id), depositAmount, shares);
+      await refreshData();
+      Alert.alert("Request submitted", "After staff approval, your UPI QR will appear here for the opening payment.");
+    } catch (error) {
+      Alert.alert("Request failed", error instanceof ApiError ? error.message : "Server unavailable");
+      return;
+    }
+    setAccountForm({ plan: "Daily RD Account", deposit: "500", shares: "1" });
   };
 
   const submitLoan = async () => {
@@ -273,6 +310,8 @@ function AppContent() {
                 accounts={dashboard.accounts}
                 payments={dashboard.payments}
                 submitPayment={submitPayment}
+                openPassbook={openPassbook}
+                openRdSchedule={openRdSchedule}
               />
             )}
             {activeTab === "loan" && (
@@ -285,6 +324,17 @@ function AppContent() {
             {loading && dashboard.profile.name==="" && <ActivityIndicator size="large" color={colors.navy} />}
           </ScrollView>
           <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+          <PassbookModal
+            account={passbookAccount}
+            data={passbookData}
+            loading={passbookLoading}
+            onClose={() => setPassbookAccount(null)}
+          />
+          <RdScheduleModal
+            account={rdScheduleAccount}
+            installments={dashboard.rd_installments ?? []}
+            onClose={() => setRdScheduleAccount(null)}
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -538,6 +588,21 @@ function HomeScreen({
         </View>
       )}
 
+      {Number(dashboard.profile.rd_due_count ?? 0) > 0 && (
+        <View style={[styles.kycBanner, { backgroundColor: "#fff5f5", borderColor: "#fca5a5" }]}>
+          <Ionicons name="alert-circle" size={24} color={colors.red} />
+          <View style={styles.kycBannerCopy}>
+            <Text style={[styles.kycBannerTitle, { color: colors.red }]}>RD Installment Due Alert</Text>
+            <Text style={styles.kycBannerText}>
+              You have {dashboard.profile.rd_due_count} pending installment{(dashboard.profile.rd_due_count ?? 0) > 1 ? "s" : ""} totaling ₹{Number(dashboard.profile.rd_due_amount ?? 0).toLocaleString("en-IN")}. Please clear dues to keep your account active and avoid fines.
+            </Text>
+            <Pressable style={[styles.kycReuploadBtn, { backgroundColor: colors.red }]} onPress={() => setActiveTab("accounts")}>
+              <Text style={styles.kycReuploadBtnText}>View Accounts & Dues</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <View style={styles.balancePanel}>
         <Text style={styles.balanceLabel}>Total Society Balance</Text>
         <Text style={styles.balanceValue}>
@@ -641,13 +706,29 @@ function HomeScreen({
         {dashboard.ledger.length === 0 ? (
           <Text style={styles.helperText}>No ledger entries yet.</Text>
         ) : (
-          dashboard.ledger.map((item: any) => (
-            <InfoRow
-              key={item.id}
-              label={`${item.description} | ${new Date(item.created_at).toLocaleDateString()}`}
-              value={`₹${item.amount} | ${item.status}`}
-            />
-          ))
+          dashboard.ledger.map((item: any) => {
+            const isCr = item.direction === "credit";
+            return (
+              <View key={item.id} style={styles.passbookTxRow}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.passbookTxDesc}>{item.description}</Text>
+                  <Text style={styles.passbookTxDate}>
+                    {item.account_no} · {new Date(item.posted_at || item.created_at).toLocaleDateString()}
+                  </Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={[styles.passbookTxAmount, isCr ? { color: "#087443" } : { color: colors.red }]}>
+                    {isCr ? "+Cr" : "-Dr"} ₹{Number(item.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                  </Text>
+                  {item.running_balance !== undefined && (
+                    <Text style={styles.passbookTxBal}>
+                      Bal: ₹{Number(item.running_balance).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            );
+          })
         )}
       </Panel>
 
@@ -663,7 +744,9 @@ function AccountsScreen({
   schemes,
   accounts,
   payments,
-  submitPayment
+  submitPayment,
+  openPassbook,
+  openRdSchedule
 }: {
   form: AccountForm;
   setForm: React.Dispatch<React.SetStateAction<AccountForm>>;
@@ -671,34 +754,129 @@ function AccountsScreen({
   schemes: Scheme[];
   accounts: any[];
   payments: any[];
-  submitPayment: (payment:any,utr:string) => void;
+  submitPayment: (payment: any, utr: string) => void;
+  openPassbook: (account: any) => void;
+  openRdSchedule: (account: any) => void;
 }) {
-  const [utrs,setUtrs]=useState<Record<number,string>>({});
+  const [utrs, setUtrs] = useState<Record<number, string>>({});
   return (
     <>
       <Panel title="My Accounts" icon="wallet-outline">
-        {accounts.length===0?<Text style={styles.helperText}>No account requests yet.</Text>:accounts.map((account:any)=>(
-          <View key={account.id} style={styles.loanItem}>
-            <View style={styles.loanTop}><Text style={styles.cardTitle}>{account.scheme_name}</Text><StatusPill label={account.onboarding_status?.replaceAll("_"," ")??account.status}/></View>
-            <Text style={styles.cardMeta}>{account.account_no} · {account.share_count} share(s) · {account.effective_interest_rate}% p.a.</Text>
-            <InfoRow label="Balance" value={`₹${Number(account.balance).toLocaleString("en-IN")}`}/>
-            <InfoRow label="Monthly commitment" value={`₹${Number(account.monthly_commitment).toLocaleString("en-IN")}`}/>
-          </View>
-        ))}
+        {accounts.length === 0 ? (
+          <Text style={styles.helperText}>No account requests yet.</Text>
+        ) : (
+          accounts.map((account: any) => {
+            const isFd = account.scheme_type === "fd";
+            const isRd = account.scheme_type === "rd";
+            return (
+              <View key={account.id} style={styles.loanItem}>
+                <View style={styles.loanTop}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={styles.cardTitle}>{account.scheme_name}</Text>
+                    {isFd ? (
+                      <Text style={styles.cardMeta}>
+                        Certificate: {account.certificate_no || "Pending"} · Acc: {account.account_no}
+                      </Text>
+                    ) : (
+                      <Text style={styles.cardMeta}>
+                        {account.account_no} · {account.share_count} share(s) · {account.effective_interest_rate}% p.a.
+                      </Text>
+                    )}
+                  </View>
+                  <StatusPill label={account.onboarding_status?.replaceAll("_", " ") ?? account.status} />
+                </View>
+
+                {isFd ? (
+                  <>
+                    <InfoRow label="Principal Deposited" value={`₹${Number(account.principal || account.balance).toLocaleString("en-IN")}`} emphasis />
+                    <InfoRow label="Target Maturity" value={`₹${Number(account.maturity_amount || 0).toLocaleString("en-IN")}`} emphasis />
+                    <InfoRow label="Interest Rate" value={`${account.effective_interest_rate}% p.a. Simple Interest`} />
+                    <InfoRow label="Tenure" value={account.term_months ? `${account.term_months} Months` : "Flexible"} />
+                    <InfoRow label="Matures On" value={account.matures_on ? new Date(account.matures_on).toLocaleDateString() : "Active"} />
+                    <InfoRow label="Current Balance" value={`₹${Number(account.balance).toLocaleString("en-IN")}`} />
+                    <View style={styles.accountActionRow}>
+                      <Pressable style={styles.accountActionBtn} onPress={() => openPassbook(account)}>
+                        <Ionicons name="book-outline" size={16} color={colors.navy} />
+                        <Text style={styles.accountActionBtnText}>View Live Passbook</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : isRd ? (
+                  <>
+                    <InfoRow label="RD Current Balance" value={`₹${Number(account.balance).toLocaleString("en-IN")}`} emphasis />
+                    <InfoRow
+                      label="Installment Commitment"
+                      value={`₹${Number(account.monthly_commitment).toLocaleString("en-IN")} / ${account.deposit_frequency || "month"}`}
+                    />
+                    {Number(account.total_due) > 0 ? (
+                      <View style={{ marginVertical: 4 }}>
+                        <InfoRow
+                          label="Pending Installments Due"
+                          value={`₹${Number(account.total_due).toLocaleString("en-IN")} (${account.due_count} pending)`}
+                          emphasis
+                        />
+                        <View style={styles.dueBadge}>
+                          <Text style={styles.dueBadgeText}>⚠️ Payment Due: {account.due_count} installment(s)</Text>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.clearBadge}>
+                        <Text style={styles.clearBadgeText}>✓ Installments Up to Date</Text>
+                      </View>
+                    )}
+                    {Number(account.maturity_amount) > 0 && (
+                      <InfoRow label="Target Maturity" value={`₹${Number(account.maturity_amount).toLocaleString("en-IN")}`} />
+                    )}
+                    <View style={styles.accountActionRow}>
+                      <Pressable style={styles.accountActionBtn} onPress={() => openRdSchedule(account)}>
+                        <Ionicons name="calendar-outline" size={16} color={colors.navy} />
+                        <Text style={styles.accountActionBtnText}>Installment Schedule</Text>
+                      </Pressable>
+                      <Pressable style={styles.accountActionBtn} onPress={() => openPassbook(account)}>
+                        <Ionicons name="book-outline" size={16} color={colors.navy} />
+                        <Text style={styles.accountActionBtnText}>View Passbook</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <InfoRow label="Current Balance" value={`₹${Number(account.balance).toLocaleString("en-IN")}`} emphasis />
+                    <InfoRow label="Share Capital (₹500/share)" value={`₹${(Number(account.share_count) * 500).toLocaleString("en-IN")}`} />
+                    <View style={styles.accountActionRow}>
+                      <Pressable style={styles.accountActionBtn} onPress={() => openPassbook(account)}>
+                        <Ionicons name="book-outline" size={16} color={colors.navy} />
+                        <Text style={styles.accountActionBtnText}>View Live Passbook</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+              </View>
+            );
+          })
+        )}
       </Panel>
 
-      {payments.filter((payment:any)=>["requested","rejected"].includes(payment.status)).map((payment:any)=>(
+      {payments.filter((payment: any) => ["requested", "rejected"].includes(payment.status)).map((payment: any) => (
         <Panel key={payment.id} title="Opening Payment Required" icon="qr-code-outline">
-          <Text style={styles.helperText}>Pay exactly ₹{Number(payment.amount).toLocaleString("en-IN")} for account {payment.account_no}. The account activates only after staff verifies your UTR.</Text>
-          <Image source={{uri:`https://quickchart.io/qr?size=260&text=${encodeURIComponent(payment.upi_uri)}`}} style={styles.paymentQr} resizeMode="contain"/>
-          <ActionButton label="Open UPI App" icon="phone-portrait-outline" onPress={()=>Linking.openURL(payment.upi_uri)}/>
-          <FormInput label="UPI transaction reference (UTR)" value={utrs[payment.id]??""} onChangeText={(value)=>setUtrs(prev=>({...prev,[payment.id]:value}))} autoCapitalize="characters"/>
-          <ActionButton label="Submit Payment for Verification" icon="checkmark-circle-outline" onPress={()=>submitPayment(payment,utrs[payment.id]??"")}/>
-          {payment.status==="rejected"&&<Text style={[styles.helperText,{color:colors.red}]}>Previous submission was rejected. Check the UTR and submit again.</Text>}
+          <Text style={styles.helperText}>
+            Pay exactly ₹{Number(payment.amount).toLocaleString("en-IN")} for account {payment.account_no}. The account activates only after staff verifies your UTR.
+          </Text>
+          <Image source={{ uri: `https://quickchart.io/qr?size=260&text=${encodeURIComponent(payment.upi_uri)}` }} style={styles.paymentQr} resizeMode="contain" />
+          <ActionButton label="Open UPI App" icon="phone-portrait-outline" onPress={() => Linking.openURL(payment.upi_uri)} />
+          <FormInput label="UPI transaction reference (UTR)" value={utrs[payment.id] ?? ""} onChangeText={(value) => setUtrs(prev => ({ ...prev, [payment.id]: value }))} autoCapitalize="characters" />
+          <ActionButton label="Submit Payment for Verification" icon="checkmark-circle-outline" onPress={() => submitPayment(payment, utrs[payment.id] ?? "")} />
+          {payment.status === "rejected" && (
+            <Text style={[styles.helperText, { color: colors.red }]}>Previous submission was rejected. Check the UTR and submit again.</Text>
+          )}
         </Panel>
       ))}
-      {payments.filter((payment:any)=>payment.status==="submitted").map((payment:any)=>(
-        <Panel key={payment.id} title="Payment Under Review" icon="time-outline"><InfoRow label="Reference" value={payment.reference}/><InfoRow label="UTR" value={payment.utr}/><InfoRow label="Status" value="Awaiting staff verification" emphasis/></Panel>
+
+      {payments.filter((payment: any) => payment.status === "submitted").map((payment: any) => (
+        <Panel key={payment.id} title="Payment Under Review" icon="time-outline">
+          <InfoRow label="Reference" value={payment.reference} />
+          <InfoRow label="UTR" value={payment.utr} />
+          <InfoRow label="Status" value="Awaiting staff verification" emphasis />
+        </Panel>
       ))}
 
       <Panel title="RD Accounts" icon="repeat-outline">
@@ -719,17 +897,247 @@ function AccountsScreen({
 
       <Panel title="Account Opening Request" icon="person-add-outline">
         <Text style={styles.fieldLabel}>Choose scheme</Text>
-        {schemes.map((scheme)=><Pressable key={scheme.id} style={[styles.quickAction,form.plan===scheme.title&&{borderColor:colors.navy,backgroundColor:"#edf4ff"}]} onPress={()=>setForm(prev=>({...prev,plan:scheme.title}))}><Ionicons name={form.plan===scheme.title?"radio-button-on":"radio-button-off"} size={20} color={colors.navy}/><Text style={styles.quickActionText}>{scheme.title} · {scheme.amount}</Text></Pressable>)}
+        {schemes.map((scheme) => {
+          const selected = form.plan === scheme.title;
+          return (
+            <Pressable
+              key={scheme.id}
+              style={[styles.quickAction, selected && { borderColor: colors.navy, backgroundColor: "#edf4ff" }]}
+              onPress={() => {
+                const sharesNum = Math.max(1, parseInt(form.shares, 10) || 1);
+                setForm((prev) => ({
+                  ...prev,
+                  plan: scheme.title,
+                  deposit: String(sharesNum * 500)
+                }));
+              }}
+            >
+              <Ionicons name={selected ? "radio-button-on" : "radio-button-off"} size={20} color={colors.navy} />
+              <Text style={styles.quickActionText}>{scheme.title} · {scheme.amount}</Text>
+            </Pressable>
+          );
+        })}
         <FormInput
-          label="Opening deposit"
+          label="Number of ₹500 monthly shares"
+          value={form.shares}
+          keyboardType="numeric"
+          onChangeText={(shares) => {
+            const num = Math.max(1, parseInt(shares, 10) || 1);
+            setForm((prev) => ({
+              ...prev,
+              shares,
+              deposit: String(num * 500)
+            }));
+          }}
+        />
+        <Text style={styles.sharesCalculationHint}>
+          ₹500 per share: {form.shares || 1} share(s) = ₹{((Math.max(1, parseInt(form.shares, 10) || 1)) * 500).toLocaleString("en-IN")} opening deposit
+        </Text>
+        <FormInput
+          label="Opening deposit (₹)"
           value={form.deposit}
           keyboardType="numeric"
           onChangeText={(deposit) => setForm((prev) => ({ ...prev, deposit }))}
         />
-        <FormInput label="Number of ₹500 monthly shares" value={form.shares} keyboardType="numeric" onChangeText={(shares)=>setForm(prev=>({...prev,shares}))}/>
         <ActionButton label="Submit Request" icon="cloud-upload-outline" onPress={submitAccount} />
       </Panel>
     </>
+  );
+}
+
+function PassbookModal({
+  account,
+  data,
+  loading,
+  onClose
+}: {
+  account: MemberAccount | null;
+  data: AccountPassbookData | null;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  if (!account) return null;
+  return (
+    <Modal visible={account !== null} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.receiptModalCard, { maxHeight: "88%", paddingBottom: 16 }]}>
+          <View style={styles.receiptModalHeader}>
+            <Ionicons name="book-outline" size={24} color={colors.navy} />
+            <Text style={styles.receiptModalTitle}>Account Passbook</Text>
+            <Pressable onPress={onClose} style={{ padding: 4 }}>
+              <Ionicons name="close" size={24} color={colors.ink} />
+            </Pressable>
+          </View>
+          <View style={styles.receiptModalDivider} />
+          <Text style={styles.passbookAccHeader}>{account.scheme_name} · {account.account_no}</Text>
+          {account.certificate_no && (
+            <Text style={styles.passbookCertNo}>Certificate No: {account.certificate_no}</Text>
+          )}
+
+          {loading ? (
+            <View style={{ paddingVertical: 40, alignItems: "center" }}>
+              <ActivityIndicator size="large" color={colors.navy} />
+              <Text style={[styles.helperText, { marginTop: 10 }]}>Loading live society ledger...</Text>
+            </View>
+          ) : data ? (
+            <>
+              <View style={styles.passbookSummaryGrid}>
+                <View style={styles.passbookSummaryCol}>
+                  <Text style={styles.passbookSummaryLabel}>Opening</Text>
+                  <Text style={styles.passbookSummaryVal}>₹{Number(data.summary.opening_deposit).toLocaleString("en-IN")}</Text>
+                </View>
+                <View style={styles.passbookSummaryCol}>
+                  <Text style={styles.passbookSummaryLabel}>Total Credits</Text>
+                  <Text style={[styles.passbookSummaryVal, { color: "#087443" }]}>+₹{Number(data.summary.total_credits).toLocaleString("en-IN")}</Text>
+                </View>
+                <View style={styles.passbookSummaryCol}>
+                  <Text style={styles.passbookSummaryLabel}>Total Debits</Text>
+                  <Text style={[styles.passbookSummaryVal, { color: colors.red }]}>-₹{Number(data.summary.total_debits).toLocaleString("en-IN")}</Text>
+                </View>
+                <View style={styles.passbookSummaryCol}>
+                  <Text style={styles.passbookSummaryLabel}>Current Balance</Text>
+                  <Text style={[styles.passbookSummaryVal, { color: colors.navy, fontWeight: "900" }]}>₹{Number(data.summary.current_balance).toLocaleString("en-IN")}</Text>
+                </View>
+              </View>
+
+              <Text style={[styles.fieldLabel, { marginTop: 12, marginBottom: 6 }]}>Real-Time Transactions ({data.transactions.length})</Text>
+              <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={true}>
+                {data.transactions.length === 0 ? (
+                  <Text style={styles.helperText}>No transactions posted yet.</Text>
+                ) : (
+                  data.transactions.map((tx) => {
+                    const isCr = tx.direction === "credit";
+                    return (
+                      <View key={tx.id} style={styles.passbookTxRow}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <Text style={styles.passbookTxDesc}>{tx.description}</Text>
+                          <Text style={styles.passbookTxDate}>
+                            {new Date(tx.posted_at || tx.created_at).toLocaleDateString()} · {tx.reference.slice(0, 8)}...
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          <Text style={[styles.passbookTxAmount, isCr ? { color: "#087443" } : { color: colors.red }]}>
+                            {isCr ? "+Cr" : "-Dr"} ₹{Number(tx.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </Text>
+                          <Text style={styles.passbookTxBal}>
+                            Bal: ₹{Number(tx.running_balance).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </>
+          ) : (
+            <Text style={styles.helperText}>No passbook data available.</Text>
+          )}
+
+          <View style={{ marginTop: 14 }}>
+            <ActionButton label="Close Passbook" icon="checkmark-outline" onPress={onClose} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function RdScheduleModal({
+  account,
+  installments,
+  onClose
+}: {
+  account: MemberAccount | null;
+  installments: RdInstallment[];
+  onClose: () => void;
+}) {
+  if (!account) return null;
+  const filtered = installments.filter((i) => i.account_id === account.id || i.account_no === account.account_no);
+  const paidCount = filtered.filter((i) => i.status === "paid").length;
+  const dueCount = filtered.filter((i) => ["due", "overdue", "partial"].includes(i.status)).length;
+  const totalDueAmount = filtered
+    .filter((i) => ["due", "overdue", "partial"].includes(i.status))
+    .reduce((sum, i) => sum + (Number(i.amount_due) + Number(i.penalty_due) - Number(i.paid_amount)), 0);
+
+  return (
+    <Modal visible={account !== null} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.receiptModalCard, { maxHeight: "88%", paddingBottom: 16 }]}>
+          <View style={styles.receiptModalHeader}>
+            <Ionicons name="calendar-outline" size={24} color={colors.navy} />
+            <Text style={styles.receiptModalTitle}>RD Installment Schedule</Text>
+            <Pressable onPress={onClose} style={{ padding: 4 }}>
+              <Ionicons name="close" size={24} color={colors.ink} />
+            </Pressable>
+          </View>
+          <View style={styles.receiptModalDivider} />
+          <Text style={styles.passbookAccHeader}>{account.scheme_name} · {account.account_no}</Text>
+          <Text style={styles.passbookCertNo}>
+            Commitment: ₹{Number(account.monthly_commitment).toLocaleString("en-IN")} / {account.deposit_frequency || "month"}
+          </Text>
+
+          <View style={styles.passbookSummaryGrid}>
+            <View style={styles.passbookSummaryCol}>
+              <Text style={styles.passbookSummaryLabel}>Total</Text>
+              <Text style={styles.passbookSummaryVal}>{filtered.length}</Text>
+            </View>
+            <View style={styles.passbookSummaryCol}>
+              <Text style={styles.passbookSummaryLabel}>Paid</Text>
+              <Text style={[styles.passbookSummaryVal, { color: "#087443" }]}>{paidCount}</Text>
+            </View>
+            <View style={styles.passbookSummaryCol}>
+              <Text style={styles.passbookSummaryLabel}>Pending Dues</Text>
+              <Text style={[styles.passbookSummaryVal, { color: dueCount > 0 ? colors.red : "#087443" }]}>
+                {dueCount}
+              </Text>
+            </View>
+            <View style={styles.passbookSummaryCol}>
+              <Text style={styles.passbookSummaryLabel}>Due Amount</Text>
+              <Text style={[styles.passbookSummaryVal, { color: dueCount > 0 ? colors.red : colors.ink, fontWeight: "900" }]}>
+                ₹{totalDueAmount.toLocaleString("en-IN")}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={[styles.fieldLabel, { marginTop: 12, marginBottom: 6 }]}>Installments List ({filtered.length})</Text>
+          <ScrollView style={{ maxHeight: 280 }} showsVerticalScrollIndicator={true}>
+            {filtered.length === 0 ? (
+              <Text style={styles.helperText}>No installment schedule generated yet.</Text>
+            ) : (
+              filtered.map((item) => {
+                const isPaid = item.status === "paid";
+                return (
+                  <View key={item.id} style={styles.passbookTxRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.passbookTxDesc}>Installment #{item.installment_no}</Text>
+                      <Text style={styles.passbookTxDate}>Due on: {new Date(item.due_on).toLocaleDateString()}</Text>
+                      {Number(item.penalty_due) > 0 && (
+                        <Text style={styles.installmentFine}>Fine/Penalty: ₹{Number(item.penalty_due).toLocaleString("en-IN")}</Text>
+                      )}
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={styles.passbookTxAmount}>
+                        ₹{Number(item.amount_due).toLocaleString("en-IN")}
+                      </Text>
+                      <StatusPill label={item.status} />
+                      {isPaid && item.paid_at && (
+                        <Text style={[styles.passbookTxDate, { color: "#087443", marginTop: 2 }]}>
+                          Paid {new Date(item.paid_at).toLocaleDateString()}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+
+          <View style={{ marginTop: 14 }}>
+            <ActionButton label="Close Schedule" icon="checkmark-outline" onPress={onClose} />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1117,21 +1525,25 @@ function InfoRow({ label, value, emphasis }: { label: string; value: string; emp
 }
 
 function StatusPill({ label }: { label: string }) {
-  const positive = label === "Active" || label === "Approved";
-  const warning = label.includes("Pending") || label.includes("Review") || label.includes("Matures");
+  const norm = (label || "").toLowerCase();
+  const positive = norm === "active" || norm === "approved" || norm === "paid";
+  const danger = norm === "overdue" || norm === "rejected";
+  const warning = norm === "due" || norm === "partial" || norm === "scheduled" || norm.includes("pending") || norm.includes("review") || norm.includes("matures");
   return (
     <View
       style={[
         styles.statusPill,
         positive && styles.statusPillPositive,
-        warning && styles.statusPillWarning
+        warning && styles.statusPillWarning,
+        danger && styles.statusPillDanger
       ]}
     >
       <Text
         style={[
           styles.statusText,
           positive && styles.statusTextPositive,
-          warning && styles.statusTextWarning
+          warning && styles.statusTextWarning,
+          danger && styles.statusTextDanger
         ]}
       >
         {label}
@@ -1657,6 +2069,9 @@ const styles = StyleSheet.create({
   statusPillWarning: {
     backgroundColor: "#fff5df"
   },
+  statusPillDanger: {
+    backgroundColor: "#fff1f0"
+  },
   statusText: {
     color: colors.muted,
     fontSize: 11,
@@ -1667,6 +2082,9 @@ const styles = StyleSheet.create({
   },
   statusTextWarning: {
     color: "#9a6a00"
+  },
+  statusTextDanger: {
+    color: colors.red
   },
   bottomNav: {
     position: "absolute",
@@ -1920,5 +2338,136 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: colors.white,
     padding: 4
+  },
+  sharesCalculationHint: {
+    fontSize: 12,
+    color: colors.navy,
+    fontWeight: "700",
+    marginTop: -6,
+    marginBottom: 12,
+    marginLeft: 2
+  },
+  accountActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10
+  },
+  accountActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.navy,
+    backgroundColor: "#edf4ff"
+  },
+  accountActionBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.navy
+  },
+  dueBadge: {
+    backgroundColor: "#fff1f0",
+    borderColor: "#ffa39e",
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    marginTop: 4
+  },
+  dueBadgeText: {
+    color: colors.red,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  clearBadge: {
+    backgroundColor: "#f6ffed",
+    borderColor: "#b7eb8f",
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    marginTop: 4
+  },
+  clearBadgeText: {
+    color: "#389e0d",
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  passbookAccHeader: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: colors.navy,
+    marginBottom: 2
+  },
+  passbookCertNo: {
+    fontSize: 12,
+    color: colors.muted,
+    fontWeight: "700",
+    marginBottom: 10
+  },
+  passbookSummaryGrid: {
+    flexDirection: "row",
+    backgroundColor: "#f8fafc",
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginBottom: 6
+  },
+  passbookSummaryCol: {
+    flex: 1,
+    alignItems: "center"
+  },
+  passbookSummaryLabel: {
+    fontSize: 10,
+    color: colors.muted,
+    fontWeight: "700",
+    marginBottom: 2
+  },
+  passbookSummaryVal: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: colors.ink
+  },
+  passbookTxRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line
+  },
+  passbookTxDesc: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.ink
+  },
+  passbookTxDate: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2
+  },
+  passbookTxAmount: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: colors.ink
+  },
+  passbookTxBal: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: 2
+  },
+  installmentFine: {
+    fontSize: 11,
+    color: colors.red,
+    fontWeight: "700",
+    marginTop: 2
   }
 });

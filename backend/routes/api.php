@@ -10,6 +10,7 @@ Route::prefix('v1')->group(function () {
   Route::get('dashboard',[MemberController::class,'dashboard']); Route::get('schemes',[MemberController::class,'schemes']);
   Route::get('receipts',[MemberController::class,'receipts']);
   Route::post('accounts',[MemberController::class,'openAccount'])->middleware('throttle:10,1');
+  Route::get('accounts/{id}/passbook',[MemberController::class,'accountPassbook']);
   Route::post('payments/{id}/submit',[MemberController::class,'submitPayment'])->middleware('throttle:10,1');
   Route::post('loans',[MemberController::class,'applyLoan'])->middleware('throttle:5,1');
   Route::post('loans/{id}/offer-response',[MemberController::class,'respondToLoanOffer'])->middleware('throttle:10,1');

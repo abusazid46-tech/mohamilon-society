@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\CreditScore;
+use App\Services\FinancialAutomation;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Hash};
 use Illuminate\Support\Str;
@@ -92,12 +93,38 @@ class MemberController extends Controller
     public function dashboard(Request $request)
     {
         $member = $this->member($request);
+        FinancialAutomation::syncRdDues();
         $score = CreditScore::recalculate($member->id);
+
+        $rdDuesMap = DB::table('rd_installments')
+            ->join('accounts', 'accounts.id', '=', 'rd_installments.account_id')
+            ->where('accounts.member_id', $member->id)
+            ->whereIn('rd_installments.status', ['due', 'overdue', 'partial'])
+            ->select('rd_installments.account_id', DB::raw('COALESCE(SUM(amount_due + penalty_due - paid_amount), 0) as total_due'), DB::raw('COUNT(*) as due_count'))
+            ->groupBy('rd_installments.account_id')
+            ->get()
+            ->keyBy('account_id');
+
+        $rdDueSummary = DB::table('rd_installments')
+            ->join('accounts', 'accounts.id', '=', 'rd_installments.account_id')
+            ->where('accounts.member_id', $member->id)
+            ->whereIn('rd_installments.status', ['due', 'overdue', 'partial'])
+            ->selectRaw('COUNT(*) as due_count, COALESCE(SUM(amount_due + penalty_due - paid_amount), 0) as total_due_amount')
+            ->first();
+
         $accounts = DB::table('accounts')->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
             ->where('member_id', $member->id)
             ->select('accounts.*', 'schemes.name as scheme_name', 'schemes.type as scheme_type',
-                'schemes.deposit_frequency', DB::raw('COALESCE(accounts.custom_interest_rate, schemes.annual_rate) as effective_interest_rate'))
-            ->get();
+                'schemes.code as scheme_code', 'schemes.deposit_frequency', 'schemes.term_months',
+                DB::raw('COALESCE(accounts.custom_interest_rate, schemes.annual_rate) as effective_interest_rate'))
+            ->get()
+            ->map(function ($acc) use ($rdDuesMap) {
+                $dueInfo = $rdDuesMap->get($acc->id);
+                $acc->total_due = $dueInfo ? (float) $dueInfo->total_due : 0.0;
+                $acc->due_count = $dueInfo ? (int) $dueInfo->due_count : 0;
+                return $acc;
+            });
+
         $payments = DB::table('payments')->join('accounts', 'accounts.id', '=', 'payments.account_id')
             ->where('accounts.member_id', $member->id)
             ->select('payments.*', 'accounts.account_no')->latest('payments.id')->get();
@@ -106,6 +133,36 @@ class MemberController extends Controller
         $rdBalance = (float) $accounts->where('scheme_type', 'rd')->where('status', 'active')->sum('balance');
         $savingsBalance = (float) $accounts->where('scheme_type', 'savings')->where('status', 'active')->sum('balance');
         $kycRejection = DB::table('kyc_documents')->where('member_id', $member->id)->where('status', 'rejected')->latest('id')->first();
+
+        // Compute running balance per account for all ledger entries
+        $allLedgerEntries = DB::table('ledger_entries')
+            ->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
+            ->where('accounts.member_id', $member->id)
+            ->where('ledger_entries.status', 'posted')
+            ->select('ledger_entries.*', 'accounts.account_no')
+            ->orderBy('ledger_entries.posted_at', 'asc')
+            ->orderBy('ledger_entries.id', 'asc')
+            ->get();
+
+        $accountRunningBalances = [];
+        $computedLedger = $allLedgerEntries->map(function ($entry) use (&$accountRunningBalances) {
+            $accId = $entry->account_id;
+            if (!isset($accountRunningBalances[$accId])) {
+                $accountRunningBalances[$accId] = 0.0;
+            }
+            $amt = (float) $entry->amount;
+            if ($entry->direction === 'credit') {
+                $accountRunningBalances[$accId] += $amt;
+            } else {
+                $accountRunningBalances[$accId] -= $amt;
+            }
+            $entry->running_balance = round($accountRunningBalances[$accId], 2);
+            return $entry;
+        });
+
+        $recentLedger = $computedLedger->sortByDesc('id')->take(50)->values();
+        $withdrawals = $computedLedger->where('direction', 'debit')->sortByDesc('id')->take(50)->values();
+
         return [
             'profile' => [
                 'name' => $request->user()->name, 'member_no' => $member->member_no, 'phone' => $request->user()->phone,
@@ -116,6 +173,8 @@ class MemberController extends Controller
                 'savings_balance' => (string) $savingsBalance,
                 'fd_balance' => (string) $fdBalance,
                 'rd_balance' => (string) $rdBalance,
+                'rd_due_amount' => (float) ($rdDueSummary?->total_due_amount ?? 0),
+                'rd_due_count' => (int) ($rdDueSummary?->due_count ?? 0),
                 'active_accounts' => $accounts->where('status', 'active')->count(),
                 'mcs_score' => $score, 'maximum_loan' => round($totalSavings * .85, 2),
             ],
@@ -137,10 +196,8 @@ class MemberController extends Controller
             'penalties_due' => (float) DB::table('loan_installments')->join('loan_applications','loan_applications.id','=','loan_installments.loan_id')
                 ->where('loan_applications.member_id', $member->id)->whereIn('loan_installments.status',['due','overdue','partial'])->sum('penalty_due'),
             'documents' => DB::table('kyc_documents')->where('member_id', $member->id)->select('id','type','mime','status','review_note','created_at')->latest('id')->get(),
-            'withdrawals' => DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
-                ->where('accounts.member_id', $member->id)->where('ledger_entries.direction', 'debit')->select('ledger_entries.*', 'accounts.account_no')->latest('ledger_entries.id')->limit(50)->get(),
-            'ledger' => DB::table('ledger_entries')->join('accounts', 'accounts.id', '=', 'ledger_entries.account_id')
-                ->where('accounts.member_id', $member->id)->select('ledger_entries.*', 'accounts.account_no')->latest('ledger_entries.id')->limit(50)->get(),
+            'withdrawals' => $withdrawals,
+            'ledger' => $recentLedger,
         ];
     }
 
@@ -159,19 +216,122 @@ class MemberController extends Controller
         $member = $this->member($request);
         $scheme = DB::table('schemes')->where('id', $data['scheme_id'])->where('active', true)->firstOrFail();
         $shares = (int) ($data['share_count'] ?? 1);
-        $minimum = $scheme->code === 'SAVINGS' || $scheme->code === 'RD-MONTHLY' ? 500 * $shares : (float) $scheme->minimum_amount;
+        $calculatedShareDeposit = $shares * 500;
+        if (empty($data['opening_deposit']) || (in_array($scheme->type, ['savings', 'rd'], true) && (float) $data['opening_deposit'] < $calculatedShareDeposit)) {
+            $data['opening_deposit'] = $calculatedShareDeposit;
+        }
+        $minimum = in_array($scheme->type, ['savings', 'rd'], true) || in_array($scheme->code, ['SAVINGS', 'RD-MONTHLY'], true)
+            ? $calculatedShareDeposit
+            : (float) $scheme->minimum_amount;
         if ((float) $data['opening_deposit'] < $minimum) {
             return response()->json(['message' => "Minimum amount is ₹".number_format($minimum, 2)], 422);
         }
         $id = DB::table('accounts')->insertGetId([
             'account_no' => 'AC'.now()->format('ymd').str_pad((string) random_int(1, 999999), 6, '0', STR_PAD_LEFT),
             'member_id' => $member->id, 'scheme_id' => $scheme->id, 'share_count' => $shares,
-            'monthly_commitment' => in_array($scheme->code, ['SAVINGS','RD-MONTHLY'], true) ? 500 * $shares : 0,
+            'monthly_commitment' => in_array($scheme->code, ['SAVINGS','RD-MONTHLY'], true) || $scheme->type === 'rd' ? 500 * $shares : 0,
             'principal' => $data['opening_deposit'], 'balance' => 0, 'status' => 'pending',
             'onboarding_status' => 'awaiting_review', 'created_at' => now(), 'updated_at' => now(),
         ]);
         $this->audit($request, 'account.requested', 'account', $id, $data);
         return response()->json(['message' => 'Account request submitted for approval', 'id' => $id], 201);
+    }
+
+    public function accountPassbook(Request $request, int $id)
+    {
+        $member = $this->member($request);
+        FinancialAutomation::syncRdDues();
+
+        $account = DB::table('accounts')
+            ->join('schemes', 'schemes.id', '=', 'accounts.scheme_id')
+            ->where('accounts.id', $id)
+            ->where('accounts.member_id', $member->id)
+            ->select(
+                'accounts.*',
+                'schemes.name as scheme_name',
+                'schemes.type as scheme_type',
+                'schemes.code as scheme_code',
+                'schemes.deposit_frequency',
+                'schemes.term_months',
+                'schemes.annual_rate as default_rate',
+                DB::raw('COALESCE(accounts.custom_interest_rate, schemes.annual_rate) as effective_interest_rate')
+            )
+            ->firstOrFail();
+
+        $ledgerEntries = DB::table('ledger_entries')
+            ->where('account_id', $id)
+            ->where('status', 'posted')
+            ->orderBy('posted_at', 'asc')
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $runningBalance = 0.0;
+        $totalCredits = 0.0;
+        $totalDebits = 0.0;
+
+        $transactions = $ledgerEntries->map(function ($entry) use (&$runningBalance, &$totalCredits, &$totalDebits) {
+            $amt = (float) $entry->amount;
+            if ($entry->direction === 'credit') {
+                $runningBalance += $amt;
+                $totalCredits += $amt;
+            } else {
+                $runningBalance -= $amt;
+                $totalDebits += $amt;
+            }
+            $entry->running_balance = round($runningBalance, 2);
+            return $entry;
+        });
+
+        $installments = collect();
+        $rdSummary = null;
+        if ($account->scheme_type === 'rd') {
+            $installments = DB::table('rd_installments')
+                ->where('account_id', $id)
+                ->orderBy('installment_no', 'asc')
+                ->get();
+
+            $paidCount = $installments->where('status', 'paid')->count();
+            $totalCount = $installments->count();
+            $dueList = $installments->whereIn('status', ['due', 'overdue', 'partial']);
+            $dueCount = $dueList->count();
+            $totalDueAmount = $dueList->sum(fn($i) => (float)$i->amount_due + (float)$i->penalty_due - (float)$i->paid_amount);
+            $totalPaidAmount = $installments->where('status', 'paid')->sum('paid_amount');
+            $nextUnpaid = $installments->firstWhere('status', '!==', 'paid');
+
+            $rdSummary = [
+                'total_count' => $totalCount,
+                'paid_count' => $paidCount,
+                'remaining_count' => $totalCount - $paidCount,
+                'due_count' => $dueCount,
+                'total_due_amount' => (float) $totalDueAmount,
+                'total_paid_amount' => (float) $totalPaidAmount,
+                'target_amount' => (float) ($account->maturity_amount ?? 0),
+                'current_balance' => (float) $account->balance,
+                'commitment' => (float) $account->monthly_commitment,
+                'frequency' => $account->deposit_frequency,
+                'next_installment' => $nextUnpaid ? [
+                    'id' => $nextUnpaid->id,
+                    'installment_no' => $nextUnpaid->installment_no,
+                    'due_on' => $nextUnpaid->due_on,
+                    'amount_due' => (float) $nextUnpaid->amount_due,
+                    'status' => $nextUnpaid->status,
+                ] : null,
+            ];
+        }
+
+        return [
+            'account' => $account,
+            'summary' => [
+                'opening_deposit' => (float) $account->principal,
+                'current_balance' => (float) $account->balance,
+                'total_credits' => round($totalCredits, 2),
+                'total_debits' => round($totalDebits, 2),
+                'transactions_count' => $transactions->count(),
+            ],
+            'transactions' => $transactions->reverse()->values(),
+            'installments' => $installments,
+            'rd_summary' => $rdSummary,
+        ];
     }
 
     public function submitPayment(Request $request, int $id)
